@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ניהול תקציב משפחתי</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; direction: rtl; color: #333; }
+        .container { max-width: 950px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { text-align: center; color: #2c3e50; }
+        .tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 18px; border: none; background: #e0e0e0; cursor: pointer; border-radius: 8px; font-size: 15px; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: #3498db; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        /* כרטיסי סיכום */
+        .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+        .card { flex: 1; min-width: 200px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 5px solid #3498db; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .card.spent { border-right-color: #e74c3c; }
+        .card.remaining { border-right-color: #27ae60; }
+        .card h3 { margin: 0 0 5px 0; font-size: 14px; color: #7f8c8d; }
+        .card .value { font-size: 22px; font-weight: bold; color: #2c3e50; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: right; }
+        th { background: #f8f9fa; color: #2c3e50; }
+        tfoot tr { background: #eaeded; font-weight: bold; border-top: 2px solid #2c3e50; }
+        
+        .form-group { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: #f9f9f9; padding: 15px; border-radius: 8px; }
+        input, button, select { padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+        button { background: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #219653; }
+        .btn-danger { background: #e74c3c; }
+        .btn-danger:hover { background: #c0392b; }
+        .chart-container { max-width: 400px; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💰 תקציב משפחתי חודשי</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('expenses')">הוצאות אחרונות</button>
+            <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
+            <button class="tab-btn" onclick="switchTab('recurring')">הוראות קבע ותשלומים קבועים</button>
+        </div>
+
+        <!-- לשונית הוצאות -->
+        <div id="expenses-tab" class="tab-content active">
+            <div class="chart-container">
+                <canvas id="statsChart"></canvas>
+            </div>
+            <h2>רשימת הוצאות</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>תאריך</th>
+                        <th>שולח</th>
+                        <th>קטגוריה</th>
+                        <th>סכום</th>
+                        <th>תיאור</th>
+                    </tr>
+                </thead>
+                <tbody id="expenses-table">
+                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- לשונית תקציב חודשי -->
+        <div id="budgets-tab" class="tab-content">
+            <!-- כרטיסי סיכום כולל -->
+            <div class="summary-cards">
+                <div class="card">
+                    <h3>סך מסגרות התקציב</h3>
+                    <div class="value" id="total-budget-limit">₪0</div>
+                </div>
+                <div class="card spent">
+                    <h3>סך הופחת החודש</h3>
+                    <div class="value" id="total-budget-spent">₪0</div>
+                </div>
+                <div class="card remaining">
+                    <h3>סך יתרה נותרת</h3>
+                    <div class="value" id="total-budget-remaining">₪0</div>
+                </div>
+            </div>
+
+            <h2>הגדרת תקציב חודשי לקטגוריה</h2>
+            <div class="form-group">
+                <input type="text" id="budget-category" placeholder="שם הקטגוריה (למשל: סופר)">
+                <input type="number" id="budget-limit" placeholder="מסגרת תקציב (₪)">
+                <button onclick="saveBudget()">שמור תקציב</button>
+            </div>
+
+            <h2>מעקב תקציב החודש</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>קטגוריה</th>
+                        <th>מסגרת תקציב</th>
+                        <th>הוצא החודש</th>
+                        <th>נותר בסעיף</th>
+                    </tr>
+                </thead>
+                <tbody id="budgets-table">
+                    <tr><td colspan="4" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
+                <tfoot id="budgets-tfoot"></tfoot>
+            </table>
+        </div>
+
+        <!-- לשונית הוראות קבע -->
+        <div id="recurring-tab" class="tab-content">
+            <h2>הוספת הוראת קבע / תשלום קבוע</h2>
+            <div class="form-group">
+                <input type="text" id="rec-title" placeholder="שם התשלום (למשל: ארנונה / נטפליקס)">
+                <input type="text" id="rec-category" placeholder="קטגוריה (למשל: מגורים)">
+                <input type="number" id="rec-amount" placeholder="סכום (₪)">
+                <input type="number" id="rec-day" placeholder="יום בחודש (1-31)" min="1" max="31">
+                <button onclick="saveRecurring()">הוסף תשלום קבוע</button>
+            </div>
+
+            <h2>רשימת תשלומים קבועים</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>שם התשלום</th>
+                        <th>קטגוריה</th>
+                        <th>סכום</th>
+                        <th>יום בחודש</th>
+                        <th>פעולה</th>
+                    </tr>
+                </thead>
+                <tbody id="recurring-table">
+                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let myChart = null;
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            if (tabName === 'expenses') {
+                document.querySelector('button[onclick="switchTab(\'expenses\')"]').classList.add('active');
+                document.getElementById('expenses-tab').classList.add('active');
+                loadData();
+            } else if (tabName === 'budgets') {
+                document.querySelector('button[onclick="switchTab(\'budgets\')"]').classList.add('active');
+                document.getElementById('budgets-tab').classList.add('active');
+                loadBudgets();
+            } else {
+                document.querySelector('button[onclick="switchTab(\'recurring\')"]').classList.add('active');
+                document.getElementById('recurring-tab').classList.add('active');
+                loadRecurring();
+            }
+        }
+
+        async function loadData() {
+            try {
+                const [expRes, statsRes] = await Promise.all([
+                    fetch('/api/expenses'),
+                    fetch('/api/stats')
+                ]);
+                const expenses = await expRes.json();
+                const stats = await statsRes.json();
+
+                const tbody = document.getElementById('expenses-table');
+                tbody.innerHTML = '';
+                if (expenses.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוצאות להצגה</td></tr>';
+                } else {
+                    expenses.forEach(ex => {
+                        tbody.innerHTML += `<tr>
+                            <td>${ex.date}</td>
+                            <td>${ex.sender}</td>
+                            <td><b>${ex.category}</b></td>
+                            <td style="color: #c0392b; font-weight:bold;">₪${ex.amount}</td>
+                            <td>${ex.description || '-'}</td>
+                        </tr>`;
+                    });
+                }
+
+                const ctx = document.getElementById('statsChart').getContext('2d');
+                const labels = stats.map(s => s.category);
+                const data = stats.map(s => s.total);
+
+                if (myChart) myChart.destroy();
+                myChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: data,
+                            backgroundColor: ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22']
+                        }]
+                    }
+                });
+            } catch (err) {
+                console.error('שגיאה בטעינת נתונים:', err);
+            }
+        }
+
+        async function loadBudgets() {
+            try {
+                const res = await fetch('/api/budgets');
+                const budgets = await res.json();
+                const tbody = document.getElementById('budgets-table');
+                const tfoot = document.getElementById('budgets-tfoot');
+                tbody.innerHTML = '';
+                tfoot.innerHTML = '';
+
+                if (budgets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">טרם הוגדרו מסגרות תקציב</td></tr>';
+                    document.getElementById('total-budget-limit').innerText = '₪0';
+                    document.getElementById('total-budget-spent').innerText = '₪0';
+                    document.getElementById('total-budget-remaining').innerText = '₪0';
+                } else {
+                    let sumLimit = 0;
+                    let sumSpent = 0;
+                    let sumRemaining = 0;
+
+                    budgets.forEach(b => {
+                        sumLimit += b.monthly_limit;
+                        sumSpent += b.spent;
+                        sumRemaining += b.remaining;
+
+                        const remainingColor = b.remaining < 0 ? '#c0392b' : '#27ae60';
+                        tbody.innerHTML += `<tr>
+                            <td><b>${b.category}</b></td>
+                            <td>₪${b.monthly_limit.toLocaleString()}</td>
+                            <td>₪${b.spent.toLocaleString()}</td>
+                            <td style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
+                        </tr>`;
+                    });
+
+                    const remainingColorTotal = sumRemaining < 0 ? '#c0392b' : '#27ae60';
+
+                    // עדכון כרטיסי סיכום
+                    document.getElementById('total-budget-limit').innerText = `₪${sumLimit.toLocaleString()}`;
+                    document.getElementById('total-budget-spent').innerText = `₪${sumSpent.toLocaleString()}`;
+                    document.getElementById('total-budget-remaining').innerText = `₪${sumRemaining.toLocaleString()}`;
+                    document.getElementById('total-budget-remaining').style.color = remainingColorTotal;
+
+                    // עדכון שורת סה"כ בתחתית הטבלה
+                    tfoot.innerHTML = `<tr>
+                        <td><b>סה"כ כולל</b></td>
+                        <td><b>₪${sumLimit.toLocaleString()}</b></td>
+                        <td><b>₪${sumSpent.toLocaleString()}</b></td>
+                        <td style="color: ${remainingColorTotal}; font-weight: bold;">₪${sumRemaining.toLocaleString()}</td>
+                    </tr>`;
+                }
+            } catch (err) {
+                console.error('שגיאה בטעינת תקציבים:', err);
+            }
+        }
+
+        async function saveBudget() {
+            const category = document.getElementById('budget-category').value.trim();
+            const limit = document.getElementById('budget-limit').value;
+
+            if (!category || !limit) {
+                alert('נא למלא קטגוריה וסכום');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/budgets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category, monthly_limit: limit })
+                });
+                if (res.ok) {
+                    document.getElementById('budget-category').value = '';
+                    document.getElementById('budget-limit').value = '';
+                    loadBudgets();
+                }
+            } catch (err) {
+                console.error('שגיאה:', err);
+            }
+        }
+
+        async function loadRecurring() {
+            try {
+                const res = await fetch('/api/recurring');
+                const items = await res.json();
+                const tbody = document.getElementById('recurring-table');
+                tbody.innerHTML = '';
+                if (items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוראות קבע רשומות</td></tr>';
+                } else {
+                    items.forEach(item => {
+                        tbody.innerHTML += `<tr>
+                            <td><b>${item.title}</b></td>
+                            <td>${item.category}</td>
+                            <td style="color: #c0392b; font-weight:bold;">₪${item.amount.toLocaleString()}</td>
+                            <td>${item.day_of_month} בחודש</td>
+                            <td><button class="btn-danger" onclick="deleteRecurring(${item.id})">מחק</button></td>
+                        </tr>`;
+                    });
+                }
+            } catch (err) {
+                console.error('שגיאה בטעינת תשלומים קבועים:', err);
+            }
+        }
+
+        async function saveRecurring() {
+            const title = document.getElementById('rec-title').value.trim();
+            const category = document.getElementById('rec-category').value.trim();
+            const amount = document.getElementById('rec-amount').value;
+            const day = document.getElementById('rec-day').value;
+
+            if (!title || !category || !amount || !day) {
+                alert('נא למלא את כל השדות');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/recurring', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, category, amount, day_of_month: day })
+                });
+                if (res.ok) {
+                    document.getElementById('rec-title').value = '';
+                    document.getElementById('rec-category').value = '';
+                    document.getElementById('rec-amount').value = '';
+                    document.getElementById('rec-day').value = '';
+                    loadRecurring();
+                }
+            } catch (err) {
+                console.error('שגיאה:', err);
+            }
+        }
+
+        async function deleteRecurring(id) {
+            if (!confirm('האם למחוק תשלום קבוע זה?')) return;
+            try {
+                const res = await fetch(`/api/recurring/${id}`, { method: 'DELETE' });
+                if (res.ok) loadRecurring();
+            } catch (err) {
+                console.error('שגיאה במחיקה:', err);
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
