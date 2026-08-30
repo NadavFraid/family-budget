@@ -6,7 +6,7 @@ const fs = require('fs');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const { 
-    addExpense, deleteLastExpense, getExpenses, getMonthlyStats, 
+    addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses 
 } = require('./db');
@@ -63,30 +63,15 @@ const SMTP_USER = process.env.SMTP_USER || 'nadav.fraid@gmail.com';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 
 async function sendBackupEmail() {
-    console.log('--------------------------------------------------');
     console.log('📦 מתחיל תהליך שליחת גיבוי למייל...');
-    console.log(`📧 נשלח אל: ${BACKUP_EMAIL}`);
-    console.log(`👤 משתמש SMTP: ${SMTP_USER}`);
-    console.log(`🔑 אורך סיסמת SMTP שהתקבלה: ${SMTP_PASS ? SMTP_PASS.length : 0} תווים`);
-
     const dbPath = path.join(__dirname, 'data', 'budget.db');
-    if (!fs.existsSync(dbPath)) {
-        console.error('❌ שגיאה: קובץ בסיס הנתונים budget.db לא נמצא בנתיב:', dbPath);
-        return { success: false, error: 'Database file not found' };
-    }
-
-    if (!SMTP_USER || !SMTP_PASS) {
-        console.error('❌ שגיאה: חסרים פרטי SMTP_USER או SMTP_PASS במשתני הסביבה!');
-        return { success: false, error: 'SMTP credentials missing' };
-    }
+    if (!fs.existsSync(dbPath)) return { success: false, error: 'Database file not found' };
+    if (!SMTP_USER || !SMTP_PASS) return { success: false, error: 'SMTP credentials missing' };
 
     try {
         const transporter = nodemailer.createTransport({
             service: 'gmail',
-            auth: {
-                user: SMTP_USER,
-                pass: SMTP_PASS
-            }
+            auth: { user: SMTP_USER, pass: SMTP_PASS }
         });
 
         const dateStr = new Date().toISOString().slice(0, 10);
@@ -99,27 +84,19 @@ async function sendBackupEmail() {
         });
 
         console.log('✅ הגיבוי נשלח בהצלחה למייל!');
-        console.log('📩 מזהה הודעה (Message ID):', info.messageId);
-        console.log('--------------------------------------------------');
         return { success: true, messageId: info.messageId };
     } catch (err) {
         console.error('❌ שגיאה בשליחת מייל הגיבוי:', err.message);
-        if (err.response) console.error('🔍 תשובת שרת Gmail:', err.response);
-        console.log('--------------------------------------------------');
-        return { success: false, error: err.message, response: err.response };
+        return { success: false, error: err.message };
     }
 }
 
-// גיבוי לילי ב-01:00 בבוקר
 cron.schedule('0 1 * * *', () => sendBackupEmail());
 
-// בדיקה יומית של הוראות קבע בשעה 08:00 בבוקר
 cron.schedule('0 8 * * *', async () => {
-    console.log('🔄 בודק הוראות קבע להיום...');
     try {
         const executed = await processDueRecurringExpenses();
         for (const item of executed) {
-            console.log(`✅ הוראת קבע הופעלה: ${item.title} - ₪${item.amount}`);
             if (client && client.info && TARGET_GROUP_ID) {
                 const catStats = await getCategoryRemaining(item.category);
                 let msgText = `🔄 **תשלום קבוע הופעל אוטומטית:**\n• תשלום: ${item.title}\n• סכום: ₪${item.amount}\n• קטגוריה: ${item.category}`;
@@ -172,14 +149,20 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// נתיב לבדיקת גיבוי למייל בלחיצה/פקודה
 app.get('/api/test-backup', async (req, res) => {
-    console.log('🧪 נקראה בקשת בדיקה ידנית לשליחת גיבוי למייל (/api/test-backup)');
     const result = await sendBackupEmail();
     res.json(result);
 });
 
 app.get('/api/expenses', async (req, res) => { try { res.json(await getExpenses()); } catch (err) { res.status(500).json({ error: err.message }); } });
+
+app.delete('/api/expenses/:id', async (req, res) => {
+    try {
+        await deleteExpense(req.params.id);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/stats', async (req, res) => { try { res.json(await getMonthlyStats()); } catch (err) { res.status(500).json({ error: err.message }); } });
 app.get('/api/budgets', async (req, res) => {
     try {

@@ -15,7 +15,6 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         
-        /* כרטיסי סיכום */
         .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
         .card { flex: 1; min-width: 200px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 5px solid #3498db; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .card.spent { border-right-color: #e74c3c; }
@@ -32,7 +31,7 @@
         input, button, select { padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
         button { background: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
         button:hover { background: #219653; }
-        .btn-danger { background: #e74c3c; }
+        .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 13px; }
         .btn-danger:hover { background: #c0392b; }
         .chart-container { max-width: 400px; margin: 20px auto; }
     </style>
@@ -61,17 +60,17 @@
                         <th>קטגוריה</th>
                         <th>סכום</th>
                         <th>תיאור</th>
+                        <th>פעולה</th>
                     </tr>
                 </thead>
                 <tbody id="expenses-table">
-                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                    <tr><td colspan="6" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- לשונית תקציב חודשי -->
         <div id="budgets-tab" class="tab-content">
-            <!-- כרטיסי סיכום כולל -->
             <div class="summary-cards">
                 <div class="card">
                     <h3>סך מסגרות התקציב</h3>
@@ -174,7 +173,7 @@
                 const tbody = document.getElementById('expenses-table');
                 tbody.innerHTML = '';
                 if (expenses.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוצאות להצגה</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">אין הוצאות להצגה</td></tr>';
                 } else {
                     expenses.forEach(ex => {
                         tbody.innerHTML += `<tr>
@@ -183,6 +182,7 @@
                             <td><b>${ex.category}</b></td>
                             <td style="color: #c0392b; font-weight:bold;">₪${ex.amount}</td>
                             <td>${ex.description || '-'}</td>
+                            <td><button class="btn-danger" onclick="deleteExpenseItem(${ex.id})">מחק</button></td>
                         </tr>`;
                     });
                 }
@@ -204,6 +204,16 @@
                 });
             } catch (err) {
                 console.error('שגיאה בטעינת נתונים:', err);
+            }
+        }
+
+        async function deleteExpenseItem(id) {
+            if (!confirm('האם למחוק הוצאה זו?')) return;
+            try {
+                const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+                if (res.ok) loadData();
+            } catch (err) {
+                console.error('שגיאה במחיקת הוצאה:', err);
             }
         }
 
@@ -242,13 +252,11 @@
 
                     const remainingColorTotal = sumRemaining < 0 ? '#c0392b' : '#27ae60';
 
-                    // עדכון כרטיסי סיכום
                     document.getElementById('total-budget-limit').innerText = `₪${sumLimit.toLocaleString()}`;
                     document.getElementById('total-budget-spent').innerText = `₪${sumSpent.toLocaleString()}`;
                     document.getElementById('total-budget-remaining').innerText = `₪${sumRemaining.toLocaleString()}`;
                     document.getElementById('total-budget-remaining').style.color = remainingColorTotal;
 
-                    // עדכון שורת סה"כ בתחתית הטבלה
                     tfoot.innerHTML = `<tr>
                         <td><b>סה"כ כולל</b></td>
                         <td><b>₪${sumLimit.toLocaleString()}</b></td>
