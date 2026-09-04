@@ -30,6 +30,19 @@ db.serialize(() => {
         description TEXT,
         last_processed TEXT
     )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS trip_expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        category TEXT,
+        amount REAL,
+        description TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS trip_settings (
+        key TEXT PRIMARY KEY,
+        value REAL
+    )`);
 });
 
 function addExpense(sender, category, amount, description, raw_text = '') {
@@ -189,6 +202,66 @@ function processDueRecurringExpenses() {
     });
 }
 
+/* פונקציות לתקציב טיול */
+function addTripExpense(category, amount, description) {
+    return new Promise((resolve, reject) => {
+        const date = new Date().toISOString().slice(0, 10);
+        db.run(
+            `INSERT INTO trip_expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
+            [date, category, amount, description],
+            function(err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+            }
+        );
+    });
+}
+
+function getTripExpenses() {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM trip_expenses ORDER BY id DESC`, [], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+}
+
+function deleteTripExpense(id) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM trip_expenses WHERE id = ?`, [id], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+}
+
+function setTripBudget(limitAmount) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `INSERT INTO trip_settings (key, value) VALUES ('total_budget', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+            [limitAmount],
+            function(err) {
+                if (err) reject(err);
+                else resolve(true);
+            }
+        );
+    });
+}
+
+function getTripSummary() {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT value FROM trip_settings WHERE key = 'total_budget'`, [], (err, bRow) => {
+            if (err) return reject(err);
+            const limit = bRow ? bRow.value : 0;
+            db.get(`SELECT SUM(amount) as spent FROM trip_expenses`, [], (err2, sRow) => {
+                if (err2) return reject(err2);
+                const spent = (sRow && sRow.spent) ? sRow.spent : 0;
+                resolve({ limit, spent, remaining: limit - spent });
+            });
+        });
+    });
+}
+
 module.exports = {
     addExpense,
     deleteLastExpense,
@@ -201,5 +274,10 @@ module.exports = {
     addRecurringExpense,
     getRecurringExpenses,
     deleteRecurringExpense,
-    processDueRecurringExpenses
+    processDueRecurringExpenses,
+    addTripExpense,
+    getTripExpenses,
+    deleteTripExpense,
+    setTripBudget,
+    getTripSummary
 };

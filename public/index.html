@@ -5,18 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>תקציב משפחתי</title>
     
-    <!-- PWA / App Icon Settings -->
     <link rel="icon" type="image/png" href="/apple-touch-icon.png?v=3">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png?v=3">
     <link rel="shortcut icon" href="/apple-touch-icon.png?v=3">
-    <link rel="apple-touch-icon" href="/icon.svg">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#3498db">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="תקציב משפחתי">
+    <meta name="apple-mobile-web-app-title" content="תקציב">
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -26,6 +24,8 @@
         .tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab-btn { padding: 10px 18px; border: none; background: #e0e0e0; cursor: pointer; border-radius: 8px; font-size: 15px; font-weight: bold; transition: 0.3s; }
         .tab-btn.active { background: #3498db; color: white; }
+        .tab-btn.trip-btn { background: #9b59b6; color: white; }
+        .tab-btn.trip-btn.active { background: #8e44ad; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         
@@ -33,6 +33,7 @@
         .card { flex: 1; min-width: 200px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 5px solid #3498db; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .card.spent { border-right-color: #e74c3c; }
         .card.remaining { border-right-color: #27ae60; }
+        .card.trip { border-right-color: #9b59b6; }
         .card h3 { margin: 0 0 5px 0; font-size: 14px; color: #7f8c8d; }
         .card .value { font-size: 22px; font-weight: bold; color: #2c3e50; }
 
@@ -57,7 +58,8 @@
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('expenses')">הוצאות אחרונות</button>
             <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
-            <button class="tab-btn" onclick="switchTab('recurring')">הוראות קבע ותשלומים קבועים</button>
+            <button class="tab-btn" onclick="switchTab('recurring')">הוראות קבע ותשלומים</button>
+            <button class="tab-btn trip-btn" onclick="switchTab('trip')">✈️ תקציב טיול</button>
         </div>
 
         <!-- לשונית הוצאות -->
@@ -151,6 +153,61 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- לשונית תקציב טיול -->
+        <div id="trip-tab" class="tab-content">
+            <div class="summary-cards">
+                <div class="card trip">
+                    <h3>תקציב יעד לטיול</h3>
+                    <div class="value" id="trip-limit">₪0</div>
+                </div>
+                <div class="card spent">
+                    <h3>סך הוצאות הטיול</h3>
+                    <div class="value" id="trip-spent">₪0</div>
+                </div>
+                <div class="card remaining">
+                    <h3>יתרה נותרת לטיול</h3>
+                    <div class="value" id="trip-remaining">₪0</div>
+                </div>
+            </div>
+
+            <h2>הגדרת תקציב יעד לטיול</h2>
+            <div class="form-group">
+                <input type="number" id="trip-budget-input" placeholder="תקציב יעד כולל (₪)">
+                <button onclick="saveTripBudget()">עדכן תקציב טיול</button>
+            </div>
+
+            <h2>הוספת הוצאת טיול</h2>
+            <div class="form-group">
+                <select id="trip-category">
+                    <option value="טיסות">✈️ טיסות</option>
+                    <option value="מלונות">אקומודציה / מלונות</option>
+                    <option value="מסעדות ואוכל">🍽️ מסעדות ואוכל</option>
+                    <option value="תחבורה ורכב">🚗 תחבורה ורכב</option>
+                    <option value="אטרקציות וקניות">🛍️ אטרקציות וקניות</option>
+                    <option value="שונות">כללי / שונות</option>
+                </select>
+                <input type="number" id="trip-amount" placeholder="סכום (₪)">
+                <input type="text" id="trip-desc" placeholder="תיאור ההוצאה (למשל: מלון סופיה)">
+                <button onclick="addTripExpenseItem()">הוסף הוצאה לטיול</button>
+            </div>
+
+            <h2>פירוט הוצאות הטיול</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>תאריך</th>
+                        <th>קטגוריה</th>
+                        <th>סכום</th>
+                        <th>תיאור</th>
+                        <th>פעולה</th>
+                    </tr>
+                </thead>
+                <tbody id="trip-expenses-table">
+                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -168,10 +225,14 @@
                 document.querySelector('button[onclick="switchTab(\'budgets\')"]').classList.add('active');
                 document.getElementById('budgets-tab').classList.add('active');
                 loadBudgets();
-            } else {
+            } else if (tabName === 'recurring') {
                 document.querySelector('button[onclick="switchTab(\'recurring\')"]').classList.add('active');
                 document.getElementById('recurring-tab').classList.add('active');
                 loadRecurring();
+            } else if (tabName === 'trip') {
+                document.querySelector('.tab-btn.trip-btn').classList.add('active');
+                document.getElementById('trip-tab').classList.add('active');
+                loadTripData();
             }
         }
 
@@ -368,6 +429,96 @@
                 if (res.ok) loadRecurring();
             } catch (err) {
                 console.error('שגיאה במחיקה:', err);
+            }
+        }
+
+        /* פונקציות טעינה וניהול תקציב טיול */
+        async function loadTripData() {
+            try {
+                const [expRes, sumRes] = await Promise.all([
+                    fetch('/api/trip/expenses'),
+                    fetch('/api/trip/summary')
+                ]);
+                const expenses = await expRes.json();
+                const summary = await sumRes.json();
+
+                document.getElementById('trip-limit').innerText = `₪${summary.limit.toLocaleString()}`;
+                document.getElementById('trip-spent').innerText = `₪${summary.spent.toLocaleString()}`;
+                
+                const remElem = document.getElementById('trip-remaining');
+                remElem.innerText = `₪${summary.remaining.toLocaleString()}`;
+                remElem.style.color = summary.remaining < 0 ? '#c0392b' : '#27ae60';
+
+                const tbody = document.getElementById('trip-expenses-table');
+                tbody.innerHTML = '';
+
+                if (expenses.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוצאות טיול רשומות</td></tr>';
+                } else {
+                    expenses.forEach(ex => {
+                        tbody.innerHTML += `<tr>
+                            <td>${ex.date}</td>
+                            <td><b>${ex.category}</b></td>
+                            <td style="color: #c0392b; font-weight:bold;">₪${ex.amount.toLocaleString()}</td>
+                            <td>${ex.description || '-'}</td>
+                            <td><button class="btn-danger" onclick="deleteTripExpenseItem(${ex.id})">מחק</button></td>
+                        </tr>`;
+                    });
+                }
+            } catch (err) {
+                console.error('שגיאה בטעינת נתוני טיול:', err);
+            }
+        }
+
+        async function saveTripBudget() {
+            const limit = document.getElementById('trip-budget-input').value;
+            if (!limit) return alert('נא להזין סכום תקציב טיול');
+
+            try {
+                const res = await fetch('/api/trip/budget', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ limit })
+                });
+                if (res.ok) {
+                    document.getElementById('trip-budget-input').value = '';
+                    loadTripData();
+                }
+            } catch (err) {
+                console.error('שגיאה בשמירת תקציב טיול:', err);
+            }
+        }
+
+        async function addTripExpenseItem() {
+            const category = document.getElementById('trip-category').value;
+            const amount = document.getElementById('trip-amount').value;
+            const description = document.getElementById('trip-desc').value.trim();
+
+            if (!amount) return alert('נא להזין סכום הוצאה');
+
+            try {
+                const res = await fetch('/api/trip/expenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category, amount, description })
+                });
+                if (res.ok) {
+                    document.getElementById('trip-amount').value = '';
+                    document.getElementById('trip-desc').value = '';
+                    loadTripData();
+                }
+            } catch (err) {
+                console.error('שגיאה בהוספת הוצאת טיול:', err);
+            }
+        }
+
+        async function deleteTripExpenseItem(id) {
+            if (!confirm('האם למחוק הוצאת טיול זו?')) return;
+            try {
+                const res = await fetch(`/api/trip/expenses/${id}`, { method: 'DELETE' });
+                if (res.ok) loadTripData();
+            } catch (err) {
+                console.error('שגיאה במחיקת הוצאת טיול:', err);
             }
         }
 

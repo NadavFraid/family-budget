@@ -8,7 +8,8 @@ const nodemailer = require('nodemailer');
 const { 
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
     getBudgets, setBudget, getCategoryRemaining,
-    addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses 
+    addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
+    addTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary
 } = require('./db');
 
 function removeSingletonLocks(dir) {
@@ -202,6 +203,40 @@ app.post('/api/recurring', async (req, res) => {
 app.delete('/api/recurring/:id', async (req, res) => {
     try {
         await deleteRecurringExpense(req.params.id);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* נתיבי API לטיול */
+app.get('/api/trip/expenses', async (req, res) => {
+    try { res.json(await getTripExpenses()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/trip/expenses', async (req, res) => {
+    try {
+        const { category, amount, description } = req.body;
+        if (!category || !amount) return res.status(400).json({ error: 'חסרים נתונים' });
+        await addTripExpense(category, parseFloat(amount), description || '');
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/trip/expenses/:id', async (req, res) => {
+    try {
+        await deleteTripExpense(req.params.id);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/trip/summary', async (req, res) => {
+    try { res.json(await getTripSummary()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/trip/budget', async (req, res) => {
+    try {
+        const { limit } = req.body;
+        if (limit === undefined) return res.status(400).json({ error: 'חסרים נתונים' });
+        await setTripBudget(parseFloat(limit));
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
