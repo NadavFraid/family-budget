@@ -285,6 +285,9 @@ client.on('ready', () => {
 
 client.on('message_create', async (msg) => {
     try {
+        // התעלמות מוחלטת מהודעות שהבוט עצמו שולח כדי למנוע לולאה אינסופית
+        if (msg.fromMe) return;
+
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
