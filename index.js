@@ -265,10 +265,6 @@ app.listen(PORT, () => {
 const chromePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
 const client = new Client({
     authStrategy: new LocalAuth(),
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1018944882-alpha.html',
-    },
     puppeteer: {
         executablePath: chromePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-process-singleton']
@@ -287,28 +283,25 @@ client.on('message_create', async (msg) => {
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
-        if (!msg.from.endsWith('@g.us')) return;
+        // בדיקת זיהוי קבוצה מתוך שדות ה-Payload
+        const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
+        if (!isGroup) return;
 
-        let rawGroupName = '';
-        try {
-            const chat = await msg.getChat();
-            if (!chat.isGroup) return;
-            rawGroupName = chat.name || '';
-        } catch (err) {
-            rawGroupName = msg._data?.chat?.name || msg._data?.name || '';
-        }
+        const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
 
-        const chatId = msg.from;
+        // חילוץ שם הקבוצה ישירות מנתוני ה-Payload ללא קריאות getChat
+        const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
         const cleanedGroup = cleanString(rawGroupName);
 
-        if (!cleanedGroup) return;
-
-        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' | תוכן: '${text}'`);
+        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' (מנוקה: '${cleanedGroup}') | תוכן: '${text}'`);
 
         const isHomeGroup = HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
         const isTripGroup = TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
 
         if (!isHomeGroup && !isTripGroup) {
+            if (rawGroupName) {
+                console.log(`🙈 הבוט מתעלם מההודעה מכיוון שהקבוצה '${rawGroupName}' אינה ברשימה המורשת.`);
+            }
             return;
         }
 
