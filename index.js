@@ -38,9 +38,6 @@ const AUTH_USER = 'family';
 const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
-/* =========================================================================
-   מזהי הקבוצות המדויקים ב-WhatsApp (Group JIDs)
-   ========================================================================= */
 const HOME_BUDGET_GROUPS = ['120363429815455473@g.us', 'תקציב משפחתי'];
 const TRIP_BUDGET_GROUPS = ['120363411073949210@g.us', 'תקציב טיול'];
 
@@ -288,7 +285,7 @@ client.on('message_create', async (msg) => {
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
-        // סינון תשובות אוטומטיות של הבוט
+        // סינון מוחלט של הודעות הבוט
         const isBotResponse = text.startsWith('👍') || 
                               text.startsWith('✈️') || 
                               text.startsWith('🗑️') || 
@@ -299,14 +296,15 @@ client.on('message_create', async (msg) => {
                               text.includes('הופעל אוטומטית');
         if (isBotResponse) return;
 
+        // עיבוד רק של השורה הראשונה בהודעה למניעת שרשורים
+        const firstLine = text.split('\n')[0].trim();
+
         const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
         if (!isGroup) return;
 
         const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
         const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
         const cleanedGroup = cleanString(rawGroupName);
-
-        console.log(`📩 [INCOMING] JID: '${chatId}' | Text: '${text}'`);
 
         const isHomeGroup = HOME_BUDGET_GROUPS.includes(chatId) || HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
         const isTripGroup = TRIP_BUDGET_GROUPS.includes(chatId) || TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
@@ -319,7 +317,7 @@ client.on('message_create', async (msg) => {
             TARGET_GROUP_ID = chatId;
         }
 
-        if (text.toLowerCase() === 'ביטול' || text.toLowerCase() === 'מחק' || text.toLowerCase() === 'undo') {
+        if (firstLine.toLowerCase() === 'ביטול' || firstLine.toLowerCase() === 'מחק' || firstLine.toLowerCase() === 'undo') {
             if (isTripGroup) {
                 const deleted = await deleteLastTripExpense();
                 if (deleted) {
@@ -338,14 +336,14 @@ client.on('message_create', async (msg) => {
             return;
         }
 
-        const matches = text.match(/(\d+(?:\.\d+)?)/);
+        const matches = firstLine.match(/(\d+(?:\.\d+)?)/);
         if (!matches) return;
 
         const amount = parseFloat(matches[0]);
-        const restText = text.replace(matches[0], '').trim();
+        const restText = firstLine.replace(matches[0], '').trim();
 
         if (isTripGroup) {
-            const category = autoDetectTripCategory(restText || text);
+            const category = autoDetectTripCategory(restText || firstLine);
             const description = restText || 'הוצאת טיול';
 
             await addTripExpense(category, amount, description);
@@ -364,7 +362,7 @@ client.on('message_create', async (msg) => {
 
             category = autoDetectCategory(`${category} ${description}`, category);
 
-            await addExpense(senderName, category, amount, description, text);
+            await addExpense(senderName, category, amount, description, firstLine);
             console.log(`✅ הוצאת בית נשמרה: ₪${amount} | ${category}`);
 
             const catStats = await getCategoryRemaining(category);
