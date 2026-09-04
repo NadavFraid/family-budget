@@ -39,7 +39,7 @@ const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
 /* =========================================================================
-   מזהי הקבוצות המודכנים ב-WhatsApp (Group JIDs)
+   מזהי הקבוצות המדויקים ב-WhatsApp (Group JIDs)
    ========================================================================= */
 const HOME_BUDGET_GROUPS = ['120363429815455473@g.us', 'תקציב משפחתי'];
 const TRIP_BUDGET_GROUPS = ['120363411073949210@g.us', 'תקציב טיול'];
@@ -285,11 +285,19 @@ client.on('ready', () => {
 
 client.on('message_create', async (msg) => {
     try {
-        // התעלמות מוחלטת מהודעות שהבוט עצמו שולח כדי למנוע לולאה אינסופית
-        if (msg.fromMe) return;
-
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
+
+        // סינון תשובות אוטומטיות של הבוט
+        const isBotResponse = text.startsWith('👍') || 
+                              text.startsWith('✈️') || 
+                              text.startsWith('🗑️') || 
+                              text.startsWith('⚠️') || 
+                              text.startsWith('🔄') || 
+                              text.includes('נרשם בהצלחה') || 
+                              text.includes('נרשמה הוצאה') ||
+                              text.includes('הופעל אוטומטית');
+        if (isBotResponse) return;
 
         const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
         if (!isGroup) return;
@@ -297,6 +305,8 @@ client.on('message_create', async (msg) => {
         const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
         const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
         const cleanedGroup = cleanString(rawGroupName);
+
+        console.log(`📩 [INCOMING] JID: '${chatId}' | Text: '${text}'`);
 
         const isHomeGroup = HOME_BUDGET_GROUPS.includes(chatId) || HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
         const isTripGroup = TRIP_BUDGET_GROUPS.includes(chatId) || TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
