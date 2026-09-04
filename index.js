@@ -9,7 +9,7 @@ const {
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
-    addTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary
+    addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary
 } = require('./db');
 
 function removeSingletonLocks(dir) {
@@ -38,6 +38,12 @@ const AUTH_USER = 'family';
 const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
+/* ============================================================
+   הגדרת רשימת שמות הקבוצות המורשות ב-WhatsApp (התאמה מדויקת)
+   ============================================================ */
+const HOME_BUDGET_GROUPS = ['תקציב משפחתי'];
+const TRIP_BUDGET_GROUPS = ['תקציב טיול נורבגיה', 'תקציב טיול'];
+
 const STORE_CATEGORY_MAP = [
     { category: 'סופר', keywords: ['שופרסל', 'אושר עד', 'רמי לוי', 'יוחננוף', 'טיב טעם', 'ויקטורי', 'מחסני השוק', 'קרפור', 'חצי חינם', 'ampm', 'am:pm', 'מגה', 'osher ad', 'shufersal', 'victory', 'carrefour', 'super'] },
     { category: 'דלק', keywords: ['פז', 'סונול', 'דלק', 'דור אלון', 'מנטה', 'אלונית', 'yellow', 'paz', 'sonol', 'delek', 'ten', 'תן'] },
@@ -57,6 +63,16 @@ function autoDetectCategory(text, defaultCategory = 'אשראי') {
         }
     }
     return defaultCategory;
+}
+
+function autoDetectTripCategory(text) {
+    const lower = (text || '').toLowerCase();
+    if (lower.includes('טיסה') || lower.includes('טיסות') || lower.includes('flight')) return 'טיסות';
+    if (lower.includes('מלון') || lower.includes('מלונות') || lower.includes('דירה') || lower.includes('hotel') || lower.includes('airbnb')) return 'מלונות';
+    if (lower.includes('מסעדה') || lower.includes('מסעדות') || lower.includes('אוכל') || lower.includes('קפה') || lower.includes('food')) return 'מסעדות ואוכל';
+    if (lower.includes('רכב') || lower.includes('דלק') || lower.includes('מונית') || lower.includes('תחבורה') || lower.includes('car') || lower.includes('taxi')) return 'תחבורה ורכב';
+    if (lower.includes('קניות') || lower.includes('שופינג') || lower.includes('אטרקציה') || lower.includes('מוזיאון')) return 'אטרקציות וקניות';
+    return 'שונות';
 }
 
 const BACKUP_EMAIL = process.env.BACKUP_EMAIL || 'nadav.fraid@gmail.com';
@@ -266,40 +282,77 @@ client.on('message_create', async (msg) => {
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
-        const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : 
-                       (msg.to && msg.to.endsWith('@g.us')) ? msg.to : null;
+        const chat = await msg.getChat();
+        if (!chat.isGroup) return;
 
-        if (!chatId) return;
-        TARGET_GROUP_ID = chatId;
+        const chatId = chat.id._serialized;
+        const groupName = chat.name ? chat.name.trim() : '';
 
+        const isHomeGroup = HOME_BUDGET_GROUPS.includes(groupName);
+        const isTripGroup = TRIP_BUDGET_GROUPS.includes(groupName);
+
+        // התעלמות מוחלטת מכל קבוצה ששמה אינו מופיע בדיוק ברשימות המורשות
+        if (!isHomeGroup && !isTripGroup) return;
+
+        if (isHomeGroup) {
+            TARGET_GROUP_ID = chatId;
+        }
+
+        // טיפול במילת ביטול/מחק
         if (text.toLowerCase() === 'ביטול' || text.toLowerCase() === 'מחק' || text.toLowerCase() === 'undo') {
-            const deleted = await deleteLastExpense();
-            if (deleted) {
-                await client.sendMessage(chatId, `🗑️ ההוצאה האחרונה בוטלה ונמחקה בהצלחה:\n• סכום: ₪${deleted.amount}\n• קטגוריה: ${deleted.category}${deleted.description ? `\n• תיאור: ${deleted.description}` : ''}`);
+            if (isTripGroup) {
+                const deleted = await deleteLastTripExpense();
+                if (deleted) {
+                    await client.sendMessage(chatId, `🗑️ הוצאת הטיול האחרונה בוטלה ונמחקה:\n• סכום: ₪${deleted.amount}\n• קטגוריה: ${deleted.category}${deleted.description ? `\n• תיאור: ${deleted.description}` : ''}`);
+                } else {
+                    await client.sendMessage(chatId, `⚠️ לא נמצאה הוצאת טיול לביטול.`);
+                }
             } else {
-                await client.sendMessage(chatId, `⚠️ לא נמצאה הוצאה אחרונה לביטול.`);
+                const deleted = await deleteLastExpense();
+                if (deleted) {
+                    await client.sendMessage(chatId, `🗑️ ההוצאה השוטפת האחרונה בוטלה ונמחקה:\n• סכום: ₪${deleted.amount}\n• קטגוריה: ${deleted.category}${deleted.description ? `\n• תיאור: ${deleted.description}` : ''}`);
+                } else {
+                    await client.sendMessage(chatId, `⚠️ לא נמצאה הוצאה אחרונה לביטול.`);
+                }
             }
             return;
         }
 
-        const match = text.match(/^(\S+)\s+(\d+(?:\.\d+)?)(?:\s+(.*))?$/);
+        // חילוץ סכום נומרי
+        const matches = text.match(/(\d+(?:\.\d+)?)/);
+        if (!matches) return;
 
-        if (match) {
-            let category = match[1];
-            const amount = parseFloat(match[2]);
-            const description = match[3] || '';
+        const amount = parseFloat(matches[0]);
+        const restText = text.replace(matches[0], '').trim();
+
+        if (isTripGroup) {
+            const category = autoDetectTripCategory(restText || text);
+            const description = restText || 'הוצאת טיול';
+
+            await addTripExpense(category, amount, description);
+            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${groupName}': ₪${amount} | ${category}`);
+
+            const tripSum = await getTripSummary();
+            let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}`;
+            if (tripSum.limit > 0) {
+                replyText += `\n\n📊 **מצב תקציב הטיול:**\n• תקציב יעד: ₪${tripSum.limit.toLocaleString()}\n• סך הוצאות: ₪${tripSum.spent.toLocaleString()}\n• נותר לטיול: ₪${tripSum.remaining.toLocaleString()}`;
+            }
+            await client.sendMessage(chatId, replyText);
+        } else if (isHomeGroup) {
+            let category = restText.split(' ')[0] || 'אשראי';
+            const description = restText.replace(category, '').trim() || restText;
             const senderName = msg._data?.notifyName || (msg.author ? msg.author.split('@')[0] : 'בן משפחה');
 
             category = autoDetectCategory(`${category} ${description}`, category);
 
             await addExpense(senderName, category, amount, description, text);
-            console.log(`✅ הוצאה נשמרה: ₪${amount} | ${category}`);
+            console.log(`✅ הוצאת בית נשמרה: ₪${amount} | ${category}`);
 
             const catStats = await getCategoryRemaining(category);
-            let replyText = `👍 נרשם בהצלחה:\n• סכום: ₪${amount}\n• קטגוריה: ${category}${description ? `\n• תיאור: ${description}` : ''}`;
+            let replyText = `👍 נרשם בהצלחה:\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}${description ? `\n• תיאור: ${description}` : ''}`;
             
             if (catStats.limit > 0) {
-                replyText += `\n\n📊 מצב תקציב (${category}):\n• מסגרת: ₪${catStats.limit}\n• הוצא החודש: ₪${catStats.spent}\n• נותר בסעיף: ₪${catStats.remaining}`;
+                replyText += `\n\n📊 מצב תקציב (${category}):\n• מסגרת: ₪${catStats.limit.toLocaleString()}\n• הוצא החודש: ₪${catStats.spent.toLocaleString()}\n• נותר בסעיף: ₪${catStats.remaining.toLocaleString()}`;
             }
 
             await client.sendMessage(chatId, replyText);
