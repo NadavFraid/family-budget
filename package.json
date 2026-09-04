@@ -11,6 +11,6 @@
     "nodemailer": "^6.9.1",
     "qrcode-terminal": "^0.12.0",
     "sqlite3": "^5.1.7",
-    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main"
+    "whatsapp-web.js": "^1.26.0"
   }
 }
