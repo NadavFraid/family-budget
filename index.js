@@ -38,11 +38,11 @@ const AUTH_USER = 'family';
 const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
-const HOME_BUDGET_GROUPS = ['תקציב משפחתי'];
-const TRIP_BUDGET_GROUPS = ['תקציב טיול'];
-
-// זיכרון מטמון למיפוי מזהי קבוצות לשמותיהן
-const KNOWN_GROUPS = {};
+/* =========================================================================
+   מזהי הקבוצות המודכנים ב-WhatsApp (Group JIDs)
+   ========================================================================= */
+const HOME_BUDGET_GROUPS = ['120363429815455473@g.us', 'תקציב משפחתי'];
+const TRIP_BUDGET_GROUPS = ['120363411073949210@g.us', 'תקציב טיול'];
 
 function cleanString(str) {
     return (str || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
@@ -279,19 +279,8 @@ client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
 });
 
-client.on('ready', async () => {
+client.on('ready', () => {
     console.log('🟢 הבוט מחובר בהצלחה ל-WhatsApp!');
-    try {
-        const chats = await client.getChats();
-        for (const chat of chats) {
-            if (chat.isGroup) {
-                KNOWN_GROUPS[chat.id._serialized] = chat.name;
-                console.log(`📌 קבוצה זוהתה ונרשמה בזיכרון: '${chat.name}' (${chat.id._serialized})`);
-            }
-        }
-    } catch (err) {
-        console.error('⚠️ שגיאה במיפוי קבוצות בעלייה:', err.message);
-    }
 });
 
 client.on('message_create', async (msg) => {
@@ -303,25 +292,13 @@ client.on('message_create', async (msg) => {
         if (!isGroup) return;
 
         const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
-
-        // שליפת שם הקבוצה מהזיכרון הממופה או מנתוני ההודעה
-        let rawGroupName = KNOWN_GROUPS[chatId] || 
-                           msg._data?.chat?.name || 
-                           msg._data?.chat?.formattedTitle || 
-                           msg._data?.groupMetadata?.subject || 
-                           msg._data?.name || '';
-
+        const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
         const cleanedGroup = cleanString(rawGroupName);
 
-        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' | תוכן: '${text}'`);
-
-        const isHomeGroup = HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
-        const isTripGroup = TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
+        const isHomeGroup = HOME_BUDGET_GROUPS.includes(chatId) || HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
+        const isTripGroup = TRIP_BUDGET_GROUPS.includes(chatId) || TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
 
         if (!isHomeGroup && !isTripGroup) {
-            if (rawGroupName) {
-                console.log(`🙈 הבוט מתעלם מההודעה מכיוון שהקבוצה '${rawGroupName}' אינה ברשימה המורשת.`);
-            }
             return;
         }
 
@@ -359,7 +336,7 @@ client.on('message_create', async (msg) => {
             const description = restText || 'הוצאת טיול';
 
             await addTripExpense(category, amount, description);
-            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${rawGroupName}': ₪${amount} | ${category}`);
+            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${chatId}': ₪${amount} | ${category}`);
 
             const tripSum = await getTripSummary();
             let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}`;
