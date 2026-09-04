@@ -39,10 +39,10 @@ const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
 /* ============================================================
-   הגדרת רשימת שמות הקבוצות המורשות ב-WhatsApp (התאמה מדויקת)
+   שמות הקבוצות המדויקים ב-WhatsApp המורשים לפעול מול הבוט
    ============================================================ */
 const HOME_BUDGET_GROUPS = ['תקציב משפחתי'];
-const TRIP_BUDGET_GROUPS = ['תקציב טיול נורבגיה', 'תקציב טיול'];
+const TRIP_BUDGET_GROUPS = ['תקציב טיול'];
 
 const STORE_CATEGORY_MAP = [
     { category: 'סופר', keywords: ['שופרסל', 'אושר עד', 'רמי לוי', 'יוחננוף', 'טיב טעם', 'ויקטורי', 'מחסני השוק', 'קרפור', 'חצי חינם', 'ampm', 'am:pm', 'מגה', 'osher ad', 'shufersal', 'victory', 'carrefour', 'super'] },
@@ -97,7 +97,7 @@ async function sendBackupEmail() {
             to: BACKUP_EMAIL,
             subject: `📊 גיבוי תקציב משפחתי יומי - ${dateStr}`,
             text: `מצורף קובץ בסיס הנתונים budget.db מעודכן להיום (${dateStr}).`,
-            attachments: [{ filename: `budget-backup-${dateStr}.db`, path: dbPath }]
+            attachments: [{ filename: `backup-budget-${dateStr}.db`, path: dbPath }]
         });
 
         console.log('✅ הגיבוי נשלח בהצלחה למייל!');
@@ -286,13 +286,15 @@ client.on('message_create', async (msg) => {
         if (!chat.isGroup) return;
 
         const chatId = chat.id._serialized;
-        const groupName = chat.name ? chat.name.trim() : '';
+        const groupName = (chat.name || '').trim();
 
         const isHomeGroup = HOME_BUDGET_GROUPS.includes(groupName);
         const isTripGroup = TRIP_BUDGET_GROUPS.includes(groupName);
 
-        // התעלמות מוחלטת מכל קבוצה ששמה אינו מופיע בדיוק ברשימות המורשות
-        if (!isHomeGroup && !isTripGroup) return;
+        // התעלמות מוחלטת מכל קבוצה שאינה בשם המדויק
+        if (!isHomeGroup && !isTripGroup) {
+            return;
+        }
 
         if (isHomeGroup) {
             TARGET_GROUP_ID = chatId;
