@@ -41,6 +41,9 @@ let TARGET_GROUP_ID = '';
 const HOME_BUDGET_GROUPS = ['תקציב משפחתי'];
 const TRIP_BUDGET_GROUPS = ['תקציב טיול'];
 
+// זיכרון מטמון למיפוי מזהי קבוצות לשמותיהן
+const KNOWN_GROUPS = {};
+
 function cleanString(str) {
     return (str || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
 }
@@ -276,24 +279,41 @@ client.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
 });
 
-client.on('ready', () => console.log('🟢 הבוט מחובר בהצלחה ל-WhatsApp!'));
+client.on('ready', async () => {
+    console.log('🟢 הבוט מחובר בהצלחה ל-WhatsApp!');
+    try {
+        const chats = await client.getChats();
+        for (const chat of chats) {
+            if (chat.isGroup) {
+                KNOWN_GROUPS[chat.id._serialized] = chat.name;
+                console.log(`📌 קבוצה זוהתה ונרשמה בזיכרון: '${chat.name}' (${chat.id._serialized})`);
+            }
+        }
+    } catch (err) {
+        console.error('⚠️ שגיאה במיפוי קבוצות בעלייה:', err.message);
+    }
+});
 
 client.on('message_create', async (msg) => {
     try {
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
-        // בדיקת זיהוי קבוצה מתוך שדות ה-Payload
         const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
         if (!isGroup) return;
 
         const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
 
-        // חילוץ שם הקבוצה ישירות מנתוני ה-Payload ללא קריאות getChat
-        const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
+        // שליפת שם הקבוצה מהזיכרון הממופה או מנתוני ההודעה
+        let rawGroupName = KNOWN_GROUPS[chatId] || 
+                           msg._data?.chat?.name || 
+                           msg._data?.chat?.formattedTitle || 
+                           msg._data?.groupMetadata?.subject || 
+                           msg._data?.name || '';
+
         const cleanedGroup = cleanString(rawGroupName);
 
-        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' (מנוקה: '${cleanedGroup}') | תוכן: '${text}'`);
+        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' | תוכן: '${text}'`);
 
         const isHomeGroup = HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
         const isTripGroup = TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
