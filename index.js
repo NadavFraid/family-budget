@@ -38,11 +38,12 @@ const AUTH_USER = 'family';
 const AUTH_PASS = 'Vngrf,VrtaubvAkh';
 let TARGET_GROUP_ID = '';
 
-/* ============================================================
-   שמות הקבוצות המדויקים ב-WhatsApp המורשים לפעול מול הבוט
-   ============================================================ */
 const HOME_BUDGET_GROUPS = ['תקציב משפחתי'];
 const TRIP_BUDGET_GROUPS = ['תקציב טיול'];
+
+function cleanString(str) {
+    return (str || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
+}
 
 const STORE_CATEGORY_MAP = [
     { category: 'סופר', keywords: ['שופרסל', 'אושר עד', 'רמי לוי', 'יוחננוף', 'טיב טעם', 'ויקטורי', 'מחסני השוק', 'קרפור', 'חצי חינם', 'ampm', 'am:pm', 'מגה', 'osher ad', 'shufersal', 'victory', 'carrefour', 'super'] },
@@ -264,6 +265,10 @@ app.listen(PORT, () => {
 const chromePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
 const client = new Client({
     authStrategy: new LocalAuth(),
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1018944882-alpha.html',
+    },
     puppeteer: {
         executablePath: chromePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-process-singleton']
@@ -282,16 +287,27 @@ client.on('message_create', async (msg) => {
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
-        const chat = await msg.getChat();
-        if (!chat.isGroup) return;
+        if (!msg.from.endsWith('@g.us')) return;
 
-        const chatId = chat.id._serialized;
-        const groupName = (chat.name || '').trim();
+        let rawGroupName = '';
+        try {
+            const chat = await msg.getChat();
+            if (!chat.isGroup) return;
+            rawGroupName = chat.name || '';
+        } catch (err) {
+            rawGroupName = msg._data?.chat?.name || msg._data?.name || '';
+        }
 
-        const isHomeGroup = HOME_BUDGET_GROUPS.includes(groupName);
-        const isTripGroup = TRIP_BUDGET_GROUPS.includes(groupName);
+        const chatId = msg.from;
+        const cleanedGroup = cleanString(rawGroupName);
 
-        // התעלמות מוחלטת מכל קבוצה שאינה בשם המדויק
+        if (!cleanedGroup) return;
+
+        console.log(`📩 התקבלה הודעה בקבוצה: '${rawGroupName}' | תוכן: '${text}'`);
+
+        const isHomeGroup = HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
+        const isTripGroup = TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
+
         if (!isHomeGroup && !isTripGroup) {
             return;
         }
@@ -300,7 +316,6 @@ client.on('message_create', async (msg) => {
             TARGET_GROUP_ID = chatId;
         }
 
-        // טיפול במילת ביטול/מחק
         if (text.toLowerCase() === 'ביטול' || text.toLowerCase() === 'מחק' || text.toLowerCase() === 'undo') {
             if (isTripGroup) {
                 const deleted = await deleteLastTripExpense();
@@ -320,7 +335,6 @@ client.on('message_create', async (msg) => {
             return;
         }
 
-        // חילוץ סכום נומרי
         const matches = text.match(/(\d+(?:\.\d+)?)/);
         if (!matches) return;
 
@@ -332,7 +346,7 @@ client.on('message_create', async (msg) => {
             const description = restText || 'הוצאת טיול';
 
             await addTripExpense(category, amount, description);
-            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${groupName}': ₪${amount} | ${category}`);
+            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${rawGroupName}': ₪${amount} | ${category}`);
 
             const tripSum = await getTripSummary();
             let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}`;

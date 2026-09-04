@@ -1,7 +1,6 @@
 {
   "name": "family-budget",
   "version": "1.0.0",
-  "description": "Family Budget WhatsApp & Web Dashboard",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,9 +8,9 @@
   "dependencies": {
     "express": "^4.18.2",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.9",
+    "nodemailer": "^6.9.1",
     "qrcode-terminal": "^0.12.0",
     "sqlite3": "^5.1.7",
-    "whatsapp-web.js": "^1.23.0"
+    "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main"
   }
 }
