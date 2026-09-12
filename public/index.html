@@ -507,7 +507,7 @@ window.fetch = async function(url, options = {}) {
                 <td><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
                 <td style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
                 <td>${ex.description || "-"}</td>
-                <td><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+                <td><button class="btn-danger" onclick="deleteTripExpenseItem(${id})">מחק</button></td>
             </tr>`;
         });
                 }
