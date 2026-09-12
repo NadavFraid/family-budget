@@ -1,3 +1,38 @@
+
+async function sendWhatsAppResponse(msg, chatId, text) {
+    try {
+        const target = chatId || TARGET_GROUP_ID;
+        if (!target) {
+            throw new Error("לא נמצא מזהה קבוצה תקין לשליחה");
+        }
+        await client.sendMessage(target, text);
+        console.log("📤 הודעת אישור נשלחה בהצלחה לקבוצה:", target);
+    } catch (err) {
+        console.error("❌ שגיאה בשליחת ווטסאפ ישירה, מנסה msg.reply:", err);
+                    console.log("========== WHATSAPP RESPONSE ==========");
+            console.log("chatId:", chatId);
+            console.log("isHomeGroup:", isHomeGroup);
+            console.log("isTripGroup:", isTripGroup);
+            console.log("client.info:", !!client.info);
+            console.log("replyText:", replyText);
+
+            try {
+                const sent = await client.sendMessage(chatId, replyText);
+                console.log("✅ SEND SUCCESS");
+                console.log("Message ID:", sent?.id?.id);
+                console.log("To:", chatId);
+            } catch (err) {
+                console.error("❌ SEND FAILED");
+                console.error(err);
+                console.error("chatId:", chatId);
+            }
+    }
+}
+
+
+
+
+
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
@@ -130,6 +165,12 @@ cron.schedule('0 8 * * *', async () => {
 });
 
 const app = express();
+
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
@@ -258,6 +299,38 @@ app.post('/api/trip/budget', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+app.put("/api/expenses/:id", async (req, res) => {
+    const id = req.params.id;
+    const category = req.body ? req.body.category : null;
+    if (!category) {
+        return res.status(400).json({ error: "קטגוריה ריקה" });
+    }
+    try {
+        const dbModule = require("./db");
+        if (dbModule.updateExpenseCategory) {
+            await dbModule.updateExpenseCategory(id, category);
+            return res.json({ success: true });
+        }
+        res.status(500).json({ error: "פונקציית עדכון לא נמצאה" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+
+app.delete("/api/budgets/:id", async (req, res) => {
+    try {
+        const { deleteBudget } = require("./db");
+        await deleteBudget(req.params.id);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
 app.listen(PORT, () => {
     console.log(`🌐 Dashboard זמין בכתובת: http://localhost:${PORT}`);
 });
@@ -280,8 +353,10 @@ client.on('ready', () => {
     console.log('🟢 הבוט מחובר בהצלחה ל-WhatsApp!');
 });
 
+console.log('📌 מאזין הודעות הופעל בהצלחה');
 client.on('message_create', async (msg) => {
     try {
+        console.log("📥 הודעה גולמית התקבלה במאזין, מזהה שולח:", msg.from, "תוכן:", msg.body);
         const text = msg.body ? msg.body.trim() : '';
         if (!text) return;
 
@@ -300,6 +375,7 @@ client.on('message_create', async (msg) => {
         const firstLine = text.split('\n')[0].trim();
 
         const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
+    console.log("📩 הודעה נכנסת:", text, "| From:", msg.from, "| To:", msg.to, "| Group Name:", msg._data?.chat?.name);
         if (!isGroup) return;
 
         const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
@@ -354,7 +430,23 @@ client.on('message_create', async (msg) => {
             if (tripSum.limit > 0) {
                 replyText += `\n\n📊 **מצב תקציב הטיול:**\n• תקציב יעד: ₪${tripSum.limit.toLocaleString()}\n• סך הוצאות: ₪${tripSum.spent.toLocaleString()}\n• נותר לטיול: ₪${tripSum.remaining.toLocaleString()}`;
             }
-            await client.sendMessage(chatId, replyText);
+                        console.log("========== WHATSAPP RESPONSE ==========");
+            console.log("chatId:", chatId);
+            console.log("isHomeGroup:", isHomeGroup);
+            console.log("isTripGroup:", isTripGroup);
+            console.log("client.info:", !!client.info);
+            console.log("replyText:", replyText);
+
+            try {
+                const sent = await client.sendMessage(chatId, replyText);
+                console.log("✅ SEND SUCCESS");
+                console.log("Message ID:", sent?.id?.id);
+                console.log("To:", chatId);
+            } catch (err) {
+                console.error("❌ SEND FAILED");
+                console.error(err);
+                console.error("chatId:", chatId);
+            }
         } else if (isHomeGroup) {
             let category = restText.split(' ')[0] || 'אשראי';
             const description = restText.replace(category, '').trim() || restText;
@@ -372,11 +464,32 @@ client.on('message_create', async (msg) => {
                 replyText += `\n\n📊 מצב תקציב (${category}):\n• מסגרת: ₪${catStats.limit.toLocaleString()}\n• הוצא החודש: ₪${catStats.spent.toLocaleString()}\n• נותר בסעיף: ₪${catStats.remaining.toLocaleString()}`;
             }
 
-            await client.sendMessage(chatId, replyText);
+            
+                        console.log("========== WHATSAPP RESPONSE ==========");
+            console.log("chatId:", chatId);
+            console.log("isHomeGroup:", isHomeGroup);
+            console.log("isTripGroup:", isTripGroup);
+            console.log("client.info:", !!client.info);
+            console.log("replyText:", replyText);
+
+            try {
+                const sent = await client.sendMessage(chatId, replyText);
+                console.log("✅ SEND SUCCESS");
+                console.log("Message ID:", sent?.id?.id);
+                console.log("To:", chatId);
+            } catch (err) {
+                console.error("❌ SEND FAILED");
+                console.error(err);
+                console.error("chatId:", chatId);
+            }
         }
     } catch (err) {
         console.error('שגיאה בעיבוד ההודעה:', err);
     }
+});
+
+client.on('message_ack', (msg, ack) => {
+    console.log(`[ACK STATUS] הודעה ${msg.id.id} קיבלה סטטוס מסירה: ${ack}`);
 });
 
 client.initialize();
