@@ -131,6 +131,12 @@ cron.schedule('0 8 * * *', async () => {
 });
 
 const app = express();
+
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
@@ -258,6 +264,38 @@ app.post('/api/trip/budget', async (req, res) => {
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+
+app.put("/api/expenses/:id", async (req, res) => {
+    const id = req.params.id;
+    const category = req.body ? req.body.category : null;
+    if (!category) {
+        return res.status(400).json({ error: "קטגוריה ריקה" });
+    }
+    try {
+        const dbModule = require("./db");
+        if (dbModule.updateExpenseCategory) {
+            await dbModule.updateExpenseCategory(id, category);
+            return res.json({ success: true });
+        }
+        res.status(500).json({ error: "פונקציית עדכון לא נמצאה" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+
+app.delete("/api/budgets/:id", async (req, res) => {
+    try {
+        const { deleteBudget } = require("./db");
+        await deleteBudget(req.params.id);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 
 app.listen(PORT, () => {
     console.log(`🌐 Dashboard זמין בכתובת: http://localhost:${PORT}`);

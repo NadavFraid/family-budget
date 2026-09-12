@@ -1,10 +1,24 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
+<script>
+const originalFetch = window.fetch;
+window.fetch = async function(url, options = {}) {
+    options.headers = options.headers || {};
+    const authHeader = 'Basic ' + btoa('family:Vngrf,VrtaubvAkh');
+    if (options.headers instanceof Headers) {
+        options.headers.set('Authorization', authHeader);
+    } else if (Array.isArray(options.headers)) {
+        options.headers.push(['Authorization', authHeader]);
+    } else {
+        options.headers['Authorization'] = authHeader;
+    }
+    return originalFetch(url, options);
+};
+</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>תקציב משפחתי</title>
-    
     <link rel="icon" type="image/png" href="/apple-touch-icon.png?v=3">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png?v=3">
@@ -15,7 +29,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="תקציב">
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; direction: rtl; color: #333; }
@@ -28,7 +41,6 @@
         .tab-btn.trip-btn.active { background: #8e44ad; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        
         .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
         .card { flex: 1; min-width: 200px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 5px solid #3498db; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .card.spent { border-right-color: #e74c3c; }
@@ -36,12 +48,10 @@
         .card.trip { border-right-color: #9b59b6; }
         .card h3 { margin: 0 0 5px 0; font-size: 14px; color: #7f8c8d; }
         .card .value { font-size: 22px; font-weight: bold; color: #2c3e50; }
-
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: right; }
         th { background: #f8f9fa; color: #2c3e50; }
         tfoot tr { background: #eaeded; font-weight: bold; border-top: 2px solid #2c3e50; }
-        
         .form-group { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: #f9f9f9; padding: 15px; border-radius: 8px; }
         input, button, select { padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
         button { background: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
@@ -49,20 +59,21 @@
         .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 13px; }
         .btn-danger:hover { background: #c0392b; }
         .chart-container { max-width: 400px; margin: 20px auto; }
+        body { overflow-x: hidden; box-sizing: border-box; }
+        .container { width: 100% !important; box-sizing: border-box !important; padding: 10px !important; }
+        table { width: 100% !important; font-size: 13px !important; }
+        th, td { padding: 8px 4px !important; font-size: 12px !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>💰 תקציב משפחתי חודשי</h1>
-        
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('expenses')">הוצאות אחרונות</button>
             <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
-            <button class="tab-btn" onclick="switchTab('recurring')">הוראות קבע ותשלומים</button>
             <button class="tab-btn trip-btn" onclick="switchTab('trip')">✈️ תקציב טיול</button>
         </div>
 
-        <!-- לשונית הוצאות -->
         <div id="expenses-tab" class="tab-content active">
             <div class="chart-container">
                 <canvas id="statsChart"></canvas>
@@ -82,10 +93,10 @@
                 <tbody id="expenses-table">
                     <tr><td colspan="6" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
+                <tfoot id="expenses-tfoot"></tfoot>
             </table>
         </div>
 
-        <!-- לשונית תקציב חודשי -->
         <div id="budgets-tab" class="tab-content">
             <div class="summary-cards">
                 <div class="card">
@@ -101,14 +112,12 @@
                     <div class="value" id="total-budget-remaining">₪0</div>
                 </div>
             </div>
-
             <h2>הגדרת תקציב חודשי לקטגוריה</h2>
             <div class="form-group">
                 <input type="text" id="budget-category" placeholder="שם הקטגוריה (למשל: סופר)">
                 <input type="number" id="budget-limit" placeholder="מסגרת תקציב (₪)">
                 <button onclick="saveBudget()">שמור תקציב</button>
             </div>
-
             <h2>מעקב תקציב החודש</h2>
             <table>
                 <thead>
@@ -117,26 +126,25 @@
                         <th>מסגרת תקציב</th>
                         <th>הוצא החודש</th>
                         <th>נותר בסעיף</th>
+                        <th>פעולה</th>
                     </tr>
                 </thead>
                 <tbody id="budgets-table">
-                    <tr><td colspan="4" style="text-align:center;">טוען נתונים...</td></tr>
+                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
                 <tfoot id="budgets-tfoot"></tfoot>
             </table>
         </div>
 
-        <!-- לשונית הוראות קבע -->
-        <div id="recurring-tab" class="tab-content">
+        <div id="recurring-tab" class="tab-content" style="display:none !important;">
             <h2>הוספת הוראת קבע / תשלום קבוע</h2>
             <div class="form-group">
-                <input type="text" id="rec-title" placeholder="שם התשלום (למשל: ארנונה / נטפליקס)">
-                <input type="text" id="rec-category" placeholder="קטגוריה (למשל: מגורים)">
+                <input type="text" id="rec-title" placeholder="שם התשלום">
+                <input type="text" id="rec-category" placeholder="קטגוריה">
                 <input type="number" id="rec-amount" placeholder="סכום (₪)">
                 <input type="number" id="rec-day" placeholder="יום בחודש (1-31)" min="1" max="31">
                 <button onclick="saveRecurring()">הוסף תשלום קבוע</button>
             </div>
-
             <h2>רשימת תשלומים קבועים</h2>
             <table>
                 <thead>
@@ -154,7 +162,6 @@
             </table>
         </div>
 
-        <!-- לשונית תקציב טיול -->
         <div id="trip-tab" class="tab-content">
             <div class="summary-cards">
                 <div class="card trip">
@@ -170,13 +177,11 @@
                     <div class="value" id="trip-remaining">₪0</div>
                 </div>
             </div>
-
             <h2>הגדרת תקציב יעד לטיול</h2>
             <div class="form-group">
                 <input type="number" id="trip-budget-input" placeholder="תקציב יעד כולל (₪)">
                 <button onclick="saveTripBudget()">עדכן תקציב טיול</button>
             </div>
-
             <h2>הוספת הוצאת טיול</h2>
             <div class="form-group">
                 <select id="trip-category">
@@ -188,10 +193,9 @@
                     <option value="שונות">כללי / שונות</option>
                 </select>
                 <input type="number" id="trip-amount" placeholder="סכום (₪)">
-                <input type="text" id="trip-desc" placeholder="תיאור ההוצאה (למשל: מלון סופיה)">
+                <input type="text" id="trip-desc" placeholder="תיאור ההוצאה">
                 <button onclick="addTripExpenseItem()">הוסף הוצאה לטיול</button>
             </div>
-
             <h2>פירוט הוצאות הטיול</h2>
             <table>
                 <thead>
@@ -237,48 +241,45 @@
         }
 
         async function loadData() {
+            const tbody = document.getElementById("expenses-table");
+            if (!tbody) return;
             try {
-                const [expRes, statsRes] = await Promise.all([
-                    fetch('/api/expenses'),
-                    fetch('/api/stats')
-                ]);
-                const expenses = await expRes.json();
-                const stats = await statsRes.json();
+                const res = await fetch("/api/expenses");
+                if (!res.ok) throw new Error("שגיאת שרת: " + res.status);
+                const expenses = await res.json();
 
-                const tbody = document.getElementById('expenses-table');
-                tbody.innerHTML = '';
-                if (expenses.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">אין הוצאות להצגה</td></tr>';
-                } else {
-                    expenses.forEach(ex => {
-                        tbody.innerHTML += `<tr>
-                            <td>${ex.date}</td>
-                            <td>${ex.sender}</td>
-                            <td><b>${ex.category}</b></td>
-                            <td style="color: #c0392b; font-weight:bold;">₪${ex.amount}</td>
-                            <td>${ex.description || '-'}</td>
-                            <td><button class="btn-danger" onclick="deleteExpenseItem(${ex.id})">מחק</button></td>
-                        </tr>`;
-                    });
+                tbody.innerHTML = "";
+                if (!Array.isArray(expenses) || expenses.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>אין הוצאות להצגה</td></tr>";
+                    return;
                 }
 
-                const ctx = document.getElementById('statsChart').getContext('2d');
-                const labels = stats.map(s => s.category);
-                const data = stats.map(s => s.total);
+                        let totalExpenses = 0;
+        expenses.forEach(ex => {
+            const cat = ex.category || "ללא קטגוריה";
+            const id = ex.id;
+            const amt = ex.amount || 0;
+            totalExpenses += amt;
+            tbody.innerHTML += `<tr>
+                <td>${ex.date || ""}</td>
+                <td>${ex.sender || "-"}</td>
+                <td><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
+                <td style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
+                <td>${ex.description || "-"}</td>
+                <td><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+            </tr>`;
+        });
 
-                if (myChart) myChart.destroy();
-                myChart = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            data: data,
-                            backgroundColor: ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22']
-                        }]
-                    }
-                });
+        const tfoot = document.getElementById("expenses-tfoot");
+        if (tfoot) {
+            tfoot.innerHTML = `<tr>
+                <td colspan="3"><b>סה"כ הוצאות החודש</b></td>
+                <td colspan="3" style="color: #c0392b; font-weight: bold;">₪${totalExpenses.toLocaleString()}</td>
+            </tr>`;
+        }
             } catch (err) {
-                console.error('שגיאה בטעינת נתונים:', err);
+                console.error("Load error:", err);
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
             }
         }
 
@@ -298,50 +299,88 @@
                 const budgets = await res.json();
                 const tbody = document.getElementById('budgets-table');
                 const tfoot = document.getElementById('budgets-tfoot');
+                if (!tbody) return;
                 tbody.innerHTML = '';
-                tfoot.innerHTML = '';
+                if (tfoot) tfoot.innerHTML = '';
 
-                if (budgets.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">טרם הוגדרו מסגרות תקציב</td></tr>';
+                if (!Array.isArray(budgets) || budgets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין תקציבים מוגדרים</td></tr>';
                     document.getElementById('total-budget-limit').innerText = '₪0';
                     document.getElementById('total-budget-spent').innerText = '₪0';
                     document.getElementById('total-budget-remaining').innerText = '₪0';
-                } else {
-                    let sumLimit = 0;
-                    let sumSpent = 0;
-                    let sumRemaining = 0;
+                    return;
+                }
 
-                    budgets.forEach(b => {
-                        sumLimit += b.monthly_limit;
-                        sumSpent += b.spent;
-                        sumRemaining += b.remaining;
+                let sumLimit = 0;
+                let sumSpent = 0;
+                let sumRemaining = 0;
 
-                        const remainingColor = b.remaining < 0 ? '#c0392b' : '#27ae60';
-                        tbody.innerHTML += `<tr>
-                            <td><b>${b.category}</b></td>
-                            <td>₪${b.monthly_limit.toLocaleString()}</td>
-                            <td>₪${b.spent.toLocaleString()}</td>
-                            <td style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
-                        </tr>`;
-                    });
+                budgets.forEach(b => {
+                    sumLimit += b.monthly_limit;
+                    sumSpent += b.spent;
+                    sumRemaining += b.remaining;
 
-                    const remainingColorTotal = sumRemaining < 0 ? '#c0392b' : '#27ae60';
+                    const remainingColor = b.remaining < 0 ? '#c0392b' : '#27ae60';
+                    tbody.innerHTML += `<tr>
+                        <td><b>${b.category}</b> <button onclick="editBudgetCategory(${b.id}, \`${b.category}\`, ${b.monthly_limit})" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
+                        <td>₪${b.monthly_limit.toLocaleString()}</td>
+                        <td>₪${b.spent.toLocaleString()}</td>
+                        <td style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
+                        <td><button class="btn-danger" onclick="deleteBudgetRow(${b.id})">מחק</button></td>
+                    </tr>`;
+                });
 
-                    document.getElementById('total-budget-limit').innerText = `₪${sumLimit.toLocaleString()}`;
-                    document.getElementById('total-budget-spent').innerText = `₪${sumSpent.toLocaleString()}`;
-                    document.getElementById('total-budget-remaining').innerText = `₪${sumRemaining.toLocaleString()}`;
-                    document.getElementById('total-budget-remaining').style.color = remainingColorTotal;
+                const remainingColorTotal = sumRemaining < 0 ? '#c0392b' : '#27ae60';
+                document.getElementById('total-budget-limit').innerText = `₪${sumLimit.toLocaleString()}`;
+                document.getElementById('total-budget-spent').innerText = `₪${sumSpent.toLocaleString()}`;
+                document.getElementById('total-budget-remaining').innerText = `₪${sumRemaining.toLocaleString()}`;
+                document.getElementById('total-budget-remaining').style.color = remainingColorTotal;
 
+                if (tfoot) {
                     tfoot.innerHTML = `<tr>
                         <td><b>סה"כ כולל</b></td>
                         <td><b>₪${sumLimit.toLocaleString()}</b></td>
                         <td><b>₪${sumSpent.toLocaleString()}</b></td>
-                        <td style="color: ${remainingColorTotal}; font-weight: bold;">₪${sumRemaining.toLocaleString()}</td>
+                        <td colspan="2" style="color: ${remainingColorTotal}; font-weight: bold;">₪${sumRemaining.toLocaleString()}</td>
                     </tr>`;
                 }
             } catch (err) {
                 console.error('שגיאה בטעינת תקציבים:', err);
             }
+        }
+
+        async function editBudgetCategory(id, oldCategory, currentLimit) {
+            const newCategory = prompt('הזן שם קטגוריה חדש:', oldCategory);
+            if (newCategory === null) return;
+            const trimmedCategory = newCategory.trim();
+            if (!trimmedCategory) {
+                alert('שם קטגוריה לא יכול להיות ריק');
+                return;
+            }
+            if (trimmedCategory === oldCategory) return;
+            try {
+                await fetch('/api/budgets/' + id, { method: 'DELETE' });
+                const res = await fetch('/api/budgets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: trimmedCategory, monthly_limit: currentLimit })
+                });
+                if (res.ok) {
+                    loadBudgets();
+                } else {
+                    alert('שגיאה בעדכון שם הקטגוריה');
+                }
+            } catch (e) {
+                alert('שגיאת תקשורת');
+            }
+        }
+
+        async function deleteBudgetRow(id) {
+            if (!confirm('האם למחוק תקציב זה?')) return;
+            try {
+                const res = await fetch('/api/budgets/' + id, { method: 'DELETE' });
+                if (res.ok) { loadBudgets(); } else { alert('שגיאה במחיקת התקציב'); }
+            } catch (e) { alert('שגיאת תקשורת'); }
         }
 
         async function saveBudget() {
@@ -374,6 +413,7 @@
                 const res = await fetch('/api/recurring');
                 const items = await res.json();
                 const tbody = document.getElementById('recurring-table');
+                if (!tbody) return;
                 tbody.innerHTML = '';
                 if (items.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוראות קבע רשומות</td></tr>';
@@ -432,7 +472,6 @@
             }
         }
 
-        /* פונקציות טעינה וניהול תקציב טיול */
         async function loadTripData() {
             try {
                 const [expRes, sumRes] = await Promise.all([
@@ -444,26 +483,33 @@
 
                 document.getElementById('trip-limit').innerText = `₪${summary.limit.toLocaleString()}`;
                 document.getElementById('trip-spent').innerText = `₪${summary.spent.toLocaleString()}`;
-                
+
                 const remElem = document.getElementById('trip-remaining');
                 remElem.innerText = `₪${summary.remaining.toLocaleString()}`;
                 remElem.style.color = summary.remaining < 0 ? '#c0392b' : '#27ae60';
 
                 const tbody = document.getElementById('trip-expenses-table');
+                if (!tbody) return;
                 tbody.innerHTML = '';
 
                 if (expenses.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוצאות טיול רשומות</td></tr>';
                 } else {
-                    expenses.forEach(ex => {
-                        tbody.innerHTML += `<tr>
-                            <td>${ex.date}</td>
-                            <td><b>${ex.category}</b></td>
-                            <td style="color: #c0392b; font-weight:bold;">₪${ex.amount.toLocaleString()}</td>
-                            <td>${ex.description || '-'}</td>
-                            <td><button class="btn-danger" onclick="deleteTripExpenseItem(${ex.id})">מחק</button></td>
-                        </tr>`;
-                    });
+                            let totalExpenses = 0;
+        expenses.forEach(ex => {
+            const cat = ex.category || "ללא קטגוריה";
+            const id = ex.id;
+            const amt = ex.amount || 0;
+            totalExpenses += amt;
+            tbody.innerHTML += `<tr>
+                <td>${ex.date || ""}</td>
+                <td>${ex.sender || "-"}</td>
+                <td><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
+                <td style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
+                <td>${ex.description || "-"}</td>
+                <td><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+            </tr>`;
+        });
                 }
             } catch (err) {
                 console.error('שגיאה בטעינת נתוני טיול:', err);
@@ -522,7 +568,83 @@
             }
         }
 
-        loadData();
+        async function editSingleExpenseCategory(id, currentCat) {
+            let existingModal = document.getElementById('dynamic-expense-modal');
+            if (existingModal) existingModal.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'dynamic-expense-modal';
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 999999; display: flex; justify-content: center; align-items: center; padding: 15px; box-sizing: border-box;';
+
+            const box = document.createElement('div');
+            box.style.cssText = 'background: #ffffff; padding: 20px; border-radius: 12px; width: 100%; max-width: 300px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.4); box-sizing: border-box;';
+
+            box.innerHTML = `
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #333;">בחר קטגוריה חדשה להוצאה</h3>
+                <div id="dynamic-cat-list" style="max-height: 220px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; text-align: right;">
+                    <div style="text-align: center; color: #666; padding: 10px;">טוען קטגוריות...</div>
+                </div>
+                <button id="close-dyn-modal" style="width: 100%; padding: 10px; cursor: pointer; font-size: 15px; border-radius: 6px; border: 1px solid #ccc; background: #f0f0f0; font-weight: bold;">סגור</button>
+            `;
+
+            overlay.appendChild(box);
+            document.body.appendChild(overlay);
+
+            document.getElementById('close-dyn-modal').onclick = () => overlay.remove();
+            overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+            try {
+                const res = await fetch('/api/budgets');
+                const budgets = await res.json();
+                let cats = [];
+                if (Array.isArray(budgets) && budgets.length > 0) {
+                    cats = budgets.map(b => b.category).filter(Boolean);
+                }
+                if (cats.length === 0) {
+                    cats = ['מזון', 'סופר', 'דלק', 'שונות', 'בילויים', 'פארם', 'מסעדות', 'חשמל', 'ארנונה'];
+                }
+                cats = [...new Set(cats)].sort((a, b) => a.localeCompare(b, 'he'));
+
+                const listDiv = document.getElementById('dynamic-cat-list');
+                listDiv.innerHTML = '';
+
+                cats.forEach(c => {
+                    const btn = document.createElement('button');
+                    const isCurrent = (c === currentCat);
+                    btn.style.cssText = `padding: 10px 14px; width: 100%; cursor: pointer; text-align: right; background: ${isCurrent ? '#e3f2fd' : '#fdfdfd'}; border: 1px solid ${isCurrent ? '#2196f3' : '#ddd'}; border-radius: 6px; font-weight: ${isCurrent ? 'bold' : 'normal'}; font-size: 15px; color: #333;`;
+                    btn.innerText = c;
+
+                    btn.onclick = async () => {
+                        try {
+                            const updateRes = await fetch('/api/expenses/' + id, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ category: c })
+                            });
+                            if (updateRes.ok) {
+                                location.reload();
+                            } else {
+                                const errData = await updateRes.json().catch(() => ({}));
+                                alert('שגיאה בעדכון: ' + (errData.error || 'שגיאת שרת'));
+                            }
+                        } catch (err) {
+                            alert('שגיאת תקשורת בעדכון הקטגוריה');
+                        }
+                    };
+                    listDiv.appendChild(btn);
+                });
+            } catch (e) {
+                document.getElementById('dynamic-cat-list').innerHTML = '<div style="color: red; text-align: center;">שגיאה בטעינת קטגוריות</div>';
+            }
+        }
+
+        // אתחול מדויק עם טעינת העמוד
+        window.addEventListener("DOMContentLoaded", () => {
+            loadData();
+            loadBudgets();
+            loadRecurring();
+            loadTripData();
+        });
     </script>
 </body>
 </html>

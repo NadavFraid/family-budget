@@ -1,34 +1,28 @@
-FROM node:20-slim
+FROM node:20
 
-# הגדרת אזור זמן לישראל
-ENV TZ=Asia/Jerusalem
-
+# התקנת Chromium ותלויות ה-Puppeteer הנדרשות ל-WhatsApp
 RUN apt-get update && apt-get install -y \
     chromium \
-    build-essential \
-    python3 \
-    make \
-    g++ \
-    tzdata \
-    fonts-ipafont-gothic \
-    fonts-wqy-zenhei \
-    fonts-thai-tlwg \
-    fonts-kacst \
-    fonts-freefont-ttf \
-    libxss1 \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    xdg-utils \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 WORKDIR /usr/src/app
-
 COPY package*.json ./
-RUN npm install --production && npm rebuild sqlite3 --build-from-source
-
+RUN npm install
 COPY . .
-
 EXPOSE 3000
-
 CMD ["node", "index.js"]
