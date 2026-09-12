@@ -19,11 +19,12 @@ window.fetch = async function(url, options = {}) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>תקציב משפחתי</title>
-    <link rel="icon" type="image/png" href="/apple-touch-icon.png?v=3">
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
-    <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png?v=3">
-    <link rel="shortcut icon" href="/apple-touch-icon.png?v=3">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=4">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png?v=4">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=4">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4">
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon-precomposed.png?v=4">
+    <link rel="manifest" href="/manifest.json?v=4">
     <meta name="theme-color" content="#3498db">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -31,8 +32,10 @@ window.fetch = async function(url, options = {}) {
     <meta name="apple-mobile-web-app-title" content="תקציב">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        * { box-sizing: border-box; }
+        html, body { max-width: 100%; overflow-x: hidden; }
         body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; direction: rtl; color: #333; }
-        .container { max-width: 950px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .container { width: 100%; max-width: 950px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
         h1 { text-align: center; color: #2c3e50; }
         .tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .tab-btn { padding: 10px 18px; border: none; background: #e0e0e0; cursor: pointer; border-radius: 8px; font-size: 15px; font-weight: bold; transition: 0.3s; }
@@ -48,8 +51,8 @@ window.fetch = async function(url, options = {}) {
         .card.trip { border-right-color: #9b59b6; }
         .card h3 { margin: 0 0 5px 0; font-size: 14px; color: #7f8c8d; }
         .card .value { font-size: 22px; font-weight: bold; color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: right; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: fixed; }
+        th, td { padding: 12px; border-bottom: 1px solid #ddd; text-align: right; overflow-wrap: anywhere; }
         th { background: #f8f9fa; color: #2c3e50; }
         tfoot tr { background: #eaeded; font-weight: bold; border-top: 2px solid #2c3e50; }
         .form-group { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: #f9f9f9; padding: 15px; border-radius: 8px; }
@@ -59,10 +62,83 @@ window.fetch = async function(url, options = {}) {
         .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 13px; }
         .btn-danger:hover { background: #c0392b; }
         .chart-container { max-width: 400px; margin: 20px auto; }
-        body { overflow-x: hidden; box-sizing: border-box; }
-        .container { width: 100% !important; box-sizing: border-box !important; padding: 10px !important; }
-        table { width: 100% !important; font-size: 13px !important; }
-        th, td { padding: 8px 4px !important; font-size: 12px !important; }
+        @media (max-width: 640px) {
+            body { padding: 8px; }
+            .container { padding: 12px; border-radius: 10px; }
+            h1 { font-size: 23px; margin: 10px 0 16px; }
+            h2 { font-size: 19px; }
+            .tabs { gap: 6px; }
+            .tab-btn { flex: 1 1 30%; min-width: 95px; padding: 9px 7px; font-size: 13px; }
+            .chart-container { width: 100%; margin: 12px auto 20px; }
+
+            #expenses-tab .expenses-table,
+            #expenses-tab .expenses-table tbody,
+            #expenses-tab .expenses-table tfoot,
+            #expenses-tab .expenses-table tr {
+                display: block;
+                width: 100%;
+            }
+
+            #expenses-tab .expenses-table { margin-top: 10px; }
+            #expenses-tab .expenses-table thead { display: none; }
+            #expenses-tab .expenses-table tbody tr {
+                margin-bottom: 12px;
+                padding: 8px 12px;
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+                box-shadow: 0 2px 6px rgba(44, 62, 80, 0.08);
+            }
+            #expenses-tab .expenses-table tbody td {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+                width: 100%;
+                padding: 8px 0;
+                border-bottom: 1px solid #edf1f5;
+                font-size: 14px;
+                text-align: left;
+                min-width: 0;
+            }
+            #expenses-tab .expenses-table tbody td:last-child { border-bottom: 0; }
+            #expenses-tab .expenses-table tbody td::before {
+                content: attr(data-label);
+                flex: 0 0 auto;
+                color: #718096;
+                font-size: 12px;
+                font-weight: 700;
+                text-align: right;
+            }
+            #expenses-tab .expenses-table tbody td[data-label="סכום"] {
+                color: #c0392b;
+                font-size: 17px;
+            }
+            #expenses-tab .expenses-table tbody td[data-label="פעולה"] {
+                align-items: center;
+            }
+            #expenses-tab .expenses-table .btn-danger { width: auto; min-width: 72px; }
+            #expenses-tab .expenses-table tbody tr.empty-state td {
+                display: block;
+                text-align: center;
+                border-bottom: 0;
+            }
+            #expenses-tab .expenses-table tbody tr.empty-state td::before { display: none; }
+            #expenses-tab .expenses-table tfoot tr {
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                margin-top: 14px;
+                padding: 12px;
+                border-radius: 8px;
+            }
+            #expenses-tab .expenses-table tfoot td {
+                display: block;
+                padding: 0;
+                border: 0;
+                font-size: 14px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -79,7 +155,7 @@ window.fetch = async function(url, options = {}) {
                 <canvas id="statsChart"></canvas>
             </div>
             <h2>רשימת הוצאות</h2>
-            <table>
+            <table class="expenses-table">
                 <thead>
                     <tr>
                         <th>תאריך</th>
@@ -91,7 +167,7 @@ window.fetch = async function(url, options = {}) {
                     </tr>
                 </thead>
                 <tbody id="expenses-table">
-                    <tr><td colspan="6" style="text-align:center;">טוען נתונים...</td></tr>
+                    <tr class="empty-state"><td colspan="6" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
                 <tfoot id="expenses-tfoot"></tfoot>
             </table>
@@ -250,7 +326,7 @@ window.fetch = async function(url, options = {}) {
 
                 tbody.innerHTML = "";
                 if (!Array.isArray(expenses) || expenses.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='6' style='text-align:center;'>אין הוצאות להצגה</td></tr>";
+                    tbody.innerHTML = "<tr class='empty-state'><td colspan='6'>אין הוצאות להצגה</td></tr>";
                     return;
                 }
 
@@ -261,12 +337,12 @@ window.fetch = async function(url, options = {}) {
             const amt = ex.amount || 0;
             totalExpenses += amt;
             tbody.innerHTML += `<tr>
-                <td>${ex.date || ""}</td>
-                <td>${ex.sender || "-"}</td>
-                <td><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
-                <td style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
-                <td>${ex.description || "-"}</td>
-                <td><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+                <td data-label="תאריך">${ex.date || ""}</td>
+                <td data-label="שולח">${ex.sender || "-"}</td>
+                <td data-label="קטגוריה"><span><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
+                <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
+                <td data-label="תיאור">${ex.description || "-"}</td>
+                <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
             </tr>`;
         });
 
@@ -279,7 +355,7 @@ window.fetch = async function(url, options = {}) {
         }
             } catch (err) {
                 console.error("Load error:", err);
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr class="empty-state"><td colspan="6" style="color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
             }
         }
 
