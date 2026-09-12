@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
+const { createMessageHandler } = require('./whatsapp-message-handler');
 const { 
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
     getBudgets, setBudget, getCategoryRemaining,
@@ -130,6 +131,12 @@ cron.schedule('0 8 * * *', async () => {
 });
 
 const app = express();
+
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
@@ -258,6 +265,38 @@ app.post('/api/trip/budget', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+app.put("/api/expenses/:id", async (req, res) => {
+    const id = req.params.id;
+    const category = req.body ? req.body.category : null;
+    if (!category) {
+        return res.status(400).json({ error: "קטגוריה ריקה" });
+    }
+    try {
+        const dbModule = require("./db");
+        if (dbModule.updateExpenseCategory) {
+            await dbModule.updateExpenseCategory(id, category);
+            return res.json({ success: true });
+        }
+        res.status(500).json({ error: "פונקציית עדכון לא נמצאה" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+
+app.delete("/api/budgets/:id", async (req, res) => {
+    try {
+        const { deleteBudget } = require("./db");
+        await deleteBudget(req.params.id);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
 app.listen(PORT, () => {
     console.log(`🌐 Dashboard זמין בכתובת: http://localhost:${PORT}`);
 });
@@ -280,103 +319,43 @@ client.on('ready', () => {
     console.log('🟢 הבוט מחובר בהצלחה ל-WhatsApp!');
 });
 
-client.on('message_create', async (msg) => {
-    try {
-        const text = msg.body ? msg.body.trim() : '';
-        if (!text) return;
+const handleBudgetMessage = createMessageHandler({
+    client,
+    homeBudgetGroups: HOME_BUDGET_GROUPS,
+    tripBudgetGroups: TRIP_BUDGET_GROUPS,
+    cleanString,
+    autoDetectCategory,
+    autoDetectTripCategory,
+    addExpense,
+    deleteLastExpense,
+    getCategoryRemaining,
+    addTripExpense,
+    deleteLastTripExpense,
+    getTripSummary,
+    onHomeGroupDetected: chatId => { TARGET_GROUP_ID = chatId; }
+});
 
-        // סינון מוחלט של הודעות הבוט
-        const isBotResponse = text.startsWith('👍') || 
-                              text.startsWith('✈️') || 
-                              text.startsWith('🗑️') || 
-                              text.startsWith('⚠️') || 
-                              text.startsWith('🔄') || 
-                              text.includes('נרשם בהצלחה') || 
-                              text.includes('נרשמה הוצאה') ||
-                              text.includes('הופעל אוטומטית');
-        if (isBotResponse) return;
+// "message" covers messages received from other family members. "message_create"
+// also covers messages sent from the WhatsApp account connected to the bot.
+// The shared handler deduplicates the incoming messages emitted by both events.
+client.on('message', msg => handleBudgetMessage(msg, 'message'));
+client.on('message_create', msg => handleBudgetMessage(msg, 'message_create'));
 
-        // עיבוד רק של השורה הראשונה בהודעה למניעת שרשורים
-        const firstLine = text.split('\n')[0].trim();
+client.on('message_ack', (msg, ack) => {
+    const messageId = msg?.id?._serialized || msg?.id?.id || 'ללא מזהה';
+    console.log(`📬 אישור מסירה ${ack} להודעה ${messageId}`);
+});
 
-        const isGroup = (msg.from && msg.from.endsWith('@g.us')) || (msg.to && msg.to.endsWith('@g.us')) || msg.isGroup;
-        if (!isGroup) return;
+client.on('auth_failure', message => {
+    console.error('❌ אימות WhatsApp נכשל:', message);
+});
 
-        const chatId = (msg.from && msg.from.endsWith('@g.us')) ? msg.from : msg.to;
-        const rawGroupName = msg._data?.chat?.name || msg._data?.chat?.formattedTitle || msg._data?.name || '';
-        const cleanedGroup = cleanString(rawGroupName);
+client.on('disconnected', reason => {
+    console.error('🔴 חיבור WhatsApp נותק:', reason);
+});
 
-        const isHomeGroup = HOME_BUDGET_GROUPS.includes(chatId) || HOME_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
-        const isTripGroup = TRIP_BUDGET_GROUPS.includes(chatId) || TRIP_BUDGET_GROUPS.some(g => cleanString(g) === cleanedGroup);
-
-        if (!isHomeGroup && !isTripGroup) {
-            return;
-        }
-
-        if (isHomeGroup) {
-            TARGET_GROUP_ID = chatId;
-        }
-
-        if (firstLine.toLowerCase() === 'ביטול' || firstLine.toLowerCase() === 'מחק' || firstLine.toLowerCase() === 'undo') {
-            if (isTripGroup) {
-                const deleted = await deleteLastTripExpense();
-                if (deleted) {
-                    await client.sendMessage(chatId, `🗑️ הוצאת הטיול האחרונה בוטלה ונמחקה:\n• סכום: ₪${deleted.amount}\n• קטגוריה: ${deleted.category}${deleted.description ? `\n• תיאור: ${deleted.description}` : ''}`);
-                } else {
-                    await client.sendMessage(chatId, `⚠️ לא נמצאה הוצאת טיול לביטול.`);
-                }
-            } else {
-                const deleted = await deleteLastExpense();
-                if (deleted) {
-                    await client.sendMessage(chatId, `🗑️ ההוצאה השוטפת האחרונה בוטלה ונמחקה:\n• סכום: ₪${deleted.amount}\n• קטגוריה: ${deleted.category}${deleted.description ? `\n• תיאור: ${deleted.description}` : ''}`);
-                } else {
-                    await client.sendMessage(chatId, `⚠️ לא נמצאה הוצאה אחרונה לביטול.`);
-                }
-            }
-            return;
-        }
-
-        const matches = firstLine.match(/(\d+(?:\.\d+)?)/);
-        if (!matches) return;
-
-        const amount = parseFloat(matches[0]);
-        const restText = firstLine.replace(matches[0], '').trim();
-
-        if (isTripGroup) {
-            const category = autoDetectTripCategory(restText || firstLine);
-            const description = restText || 'הוצאת טיול';
-
-            await addTripExpense(category, amount, description);
-            console.log(`✈️ הוצאת טיול נרשמה מקבוצת '${chatId}': ₪${amount} | ${category}`);
-
-            const tripSum = await getTripSummary();
-            let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}`;
-            if (tripSum.limit > 0) {
-                replyText += `\n\n📊 **מצב תקציב הטיול:**\n• תקציב יעד: ₪${tripSum.limit.toLocaleString()}\n• סך הוצאות: ₪${tripSum.spent.toLocaleString()}\n• נותר לטיול: ₪${tripSum.remaining.toLocaleString()}`;
-            }
-            await client.sendMessage(chatId, replyText);
-        } else if (isHomeGroup) {
-            let category = restText.split(' ')[0] || 'אשראי';
-            const description = restText.replace(category, '').trim() || restText;
-            const senderName = msg._data?.notifyName || (msg.author ? msg.author.split('@')[0] : 'בן משפחה');
-
-            category = autoDetectCategory(`${category} ${description}`, category);
-
-            await addExpense(senderName, category, amount, description, firstLine);
-            console.log(`✅ הוצאת בית נשמרה: ₪${amount} | ${category}`);
-
-            const catStats = await getCategoryRemaining(category);
-            let replyText = `👍 נרשם בהצלחה:\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}${description ? `\n• תיאור: ${description}` : ''}`;
-            
-            if (catStats.limit > 0) {
-                replyText += `\n\n📊 מצב תקציב (${category}):\n• מסגרת: ₪${catStats.limit.toLocaleString()}\n• הוצא החודש: ₪${catStats.spent.toLocaleString()}\n• נותר בסעיף: ₪${catStats.remaining.toLocaleString()}`;
-            }
-
-            await client.sendMessage(chatId, replyText);
-        }
-    } catch (err) {
-        console.error('שגיאה בעיבוד ההודעה:', err);
-    }
+client.on('change_state', state => {
+    console.log(`🔄 מצב חיבור WhatsApp: ${state}`);
 });
 
 client.initialize();

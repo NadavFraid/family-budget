@@ -262,7 +262,34 @@ function getTripSummary() {
     });
 }
 
+
+function deleteLastTripExpense() {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM trip_expenses ORDER BY id DESC LIMIT 1`, [], (err, row) => {
+            if (err) return reject(err);
+            if (!row) return resolve(null);
+            db.run(`DELETE FROM trip_expenses WHERE id = ?`, [row.id], (err2) => {
+                if (err2) reject(err2);
+                else resolve(row);
+            });
+        });
+    });
+}
+
+
+function updateExpenseCategory(id, newCategory) {
+return new Promise((resolve, reject) => {
+    db.run(`UPDATE expenses SET category = ? WHERE id = ?`, [newCategory, id], function(err) {
+        if (err) return reject(err);
+        resolve({ id, category: newCategory, changes: this.changes });
+    });
+});
+}
+
 module.exports = {
+    deleteBudget,
+    updateExpenseCategory,
+    deleteLastTripExpense,
     addExpense,
     deleteLastExpense,
     deleteExpense,
@@ -281,3 +308,13 @@ module.exports = {
     setTripBudget,
     getTripSummary
 };
+
+
+function deleteBudget(id) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM budgets WHERE id = ?`, [id], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+        });
+    });
+}

@@ -4,3 +4,4 @@ node_modules/
 data/
 .wwebjs_auth/
 node_modules/
+.env
