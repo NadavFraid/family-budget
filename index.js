@@ -162,6 +162,24 @@ app.post('/api/quick-add', async (req, res) => {
     }
 });
 
+// Home-screen icon requests may be made outside the authenticated browser
+// session, so expose only these non-sensitive static assets before Basic Auth.
+const publicIconAssets = [
+    '/favicon.ico',
+    '/favicon-48.png',
+    '/icon.svg',
+    '/icon-192.png',
+    '/icon-512.png',
+    '/apple-touch-icon.png',
+    '/apple-touch-icon-precomposed.png',
+    '/manifest.json'
+];
+
+app.get(publicIconAssets, (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.sendFile(path.join(__dirname, 'public', req.path.slice(1)));
+});
+
 app.use((req, res, next) => {
     const auth = { login: AUTH_USER, password: AUTH_PASS };
     const b64auth = (req.headers.authorization || '').split(' ')[1] || '';

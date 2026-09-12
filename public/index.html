@@ -19,12 +19,12 @@ window.fetch = async function(url, options = {}) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>תקציב משפחתי</title>
-    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=4">
-    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png?v=4">
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=4">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4">
-    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon-precomposed.png?v=4">
-    <link rel="manifest" href="/manifest.json?v=4">
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png?v=5">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=5">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon-precomposed.png">
+    <link rel="manifest" href="/manifest.json?v=5">
     <meta name="theme-color" content="#3498db">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -71,17 +71,17 @@ window.fetch = async function(url, options = {}) {
             .tab-btn { flex: 1 1 30%; min-width: 95px; padding: 9px 7px; font-size: 13px; }
             .chart-container { width: 100%; margin: 12px auto 20px; }
 
-            #expenses-tab .expenses-table,
-            #expenses-tab .expenses-table tbody,
-            #expenses-tab .expenses-table tfoot,
-            #expenses-tab .expenses-table tr {
+            .mobile-card-table,
+            .mobile-card-table tbody,
+            .mobile-card-table tfoot,
+            .mobile-card-table tr {
                 display: block;
                 width: 100%;
             }
 
-            #expenses-tab .expenses-table { margin-top: 10px; }
-            #expenses-tab .expenses-table thead { display: none; }
-            #expenses-tab .expenses-table tbody tr {
+            .mobile-card-table { margin-top: 10px; }
+            .mobile-card-table thead { display: none; }
+            .mobile-card-table tbody tr {
                 margin-bottom: 12px;
                 padding: 8px 12px;
                 background: #fff;
@@ -89,7 +89,7 @@ window.fetch = async function(url, options = {}) {
                 border-radius: 10px;
                 box-shadow: 0 2px 6px rgba(44, 62, 80, 0.08);
             }
-            #expenses-tab .expenses-table tbody td {
+            .mobile-card-table tbody td {
                 display: flex;
                 align-items: flex-start;
                 justify-content: space-between;
@@ -101,8 +101,8 @@ window.fetch = async function(url, options = {}) {
                 text-align: left;
                 min-width: 0;
             }
-            #expenses-tab .expenses-table tbody td:last-child { border-bottom: 0; }
-            #expenses-tab .expenses-table tbody td::before {
+            .mobile-card-table tbody td:last-child { border-bottom: 0; }
+            .mobile-card-table tbody td::before {
                 content: attr(data-label);
                 flex: 0 0 auto;
                 color: #718096;
@@ -110,21 +110,27 @@ window.fetch = async function(url, options = {}) {
                 font-weight: 700;
                 text-align: right;
             }
-            #expenses-tab .expenses-table tbody td[data-label="סכום"] {
+            .mobile-card-table tbody td[data-label="סכום"] {
                 color: #c0392b;
                 font-size: 17px;
             }
-            #expenses-tab .expenses-table tbody td[data-label="פעולה"] {
+            .mobile-card-table tbody td[data-label="פעולה"] {
                 align-items: center;
             }
-            #expenses-tab .expenses-table .btn-danger { width: auto; min-width: 72px; }
-            #expenses-tab .expenses-table tbody tr.empty-state td {
+            .mobile-card-table .btn-danger {
+                width: auto;
+                min-width: 72px;
+                flex: 0 0 auto;
+                white-space: nowrap;
+                writing-mode: horizontal-tb;
+            }
+            .mobile-card-table tbody tr.empty-state td {
                 display: block;
                 text-align: center;
                 border-bottom: 0;
             }
-            #expenses-tab .expenses-table tbody tr.empty-state td::before { display: none; }
-            #expenses-tab .expenses-table tfoot tr {
+            .mobile-card-table tbody tr.empty-state td::before { display: none; }
+            .mobile-card-table tfoot tr {
                 display: flex;
                 justify-content: space-between;
                 gap: 12px;
@@ -132,12 +138,13 @@ window.fetch = async function(url, options = {}) {
                 padding: 12px;
                 border-radius: 8px;
             }
-            #expenses-tab .expenses-table tfoot td {
+            .mobile-card-table tfoot td {
                 display: block;
                 padding: 0;
                 border: 0;
                 font-size: 14px;
             }
+            #budgets-tab .mobile-card-table tfoot { display: none; }
         }
     </style>
 </head>
@@ -155,7 +162,7 @@ window.fetch = async function(url, options = {}) {
                 <canvas id="statsChart"></canvas>
             </div>
             <h2>רשימת הוצאות</h2>
-            <table class="expenses-table">
+            <table class="expenses-table mobile-card-table">
                 <thead>
                     <tr>
                         <th>תאריך</th>
@@ -195,7 +202,7 @@ window.fetch = async function(url, options = {}) {
                 <button onclick="saveBudget()">שמור תקציב</button>
             </div>
             <h2>מעקב תקציב החודש</h2>
-            <table>
+            <table class="mobile-card-table">
                 <thead>
                     <tr>
                         <th>קטגוריה</th>
@@ -206,7 +213,7 @@ window.fetch = async function(url, options = {}) {
                     </tr>
                 </thead>
                 <tbody id="budgets-table">
-                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                    <tr class="empty-state"><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
                 <tfoot id="budgets-tfoot"></tfoot>
             </table>
@@ -273,7 +280,7 @@ window.fetch = async function(url, options = {}) {
                 <button onclick="addTripExpenseItem()">הוסף הוצאה לטיול</button>
             </div>
             <h2>פירוט הוצאות הטיול</h2>
-            <table>
+            <table class="mobile-card-table">
                 <thead>
                     <tr>
                         <th>תאריך</th>
@@ -284,7 +291,7 @@ window.fetch = async function(url, options = {}) {
                     </tr>
                 </thead>
                 <tbody id="trip-expenses-table">
-                    <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                    <tr class="empty-state"><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -380,7 +387,7 @@ window.fetch = async function(url, options = {}) {
                 if (tfoot) tfoot.innerHTML = '';
 
                 if (!Array.isArray(budgets) || budgets.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין תקציבים מוגדרים</td></tr>';
+                    tbody.innerHTML = '<tr class="empty-state"><td colspan="5" style="text-align:center;">אין תקציבים מוגדרים</td></tr>';
                     document.getElementById('total-budget-limit').innerText = '₪0';
                     document.getElementById('total-budget-spent').innerText = '₪0';
                     document.getElementById('total-budget-remaining').innerText = '₪0';
@@ -398,11 +405,11 @@ window.fetch = async function(url, options = {}) {
 
                     const remainingColor = b.remaining < 0 ? '#c0392b' : '#27ae60';
                     tbody.innerHTML += `<tr>
-                        <td><b>${b.category}</b> <button onclick="editBudgetCategory(${b.id}, \`${b.category}\`, ${b.monthly_limit})" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
-                        <td>₪${b.monthly_limit.toLocaleString()}</td>
-                        <td>₪${b.spent.toLocaleString()}</td>
-                        <td style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
-                        <td><button class="btn-danger" onclick="deleteBudgetRow(${b.id})">מחק</button></td>
+                        <td data-label="קטגוריה"><span><b>${b.category}</b> <button onclick="editBudgetCategory(${b.id}, \`${b.category}\`, ${b.monthly_limit})" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
+                        <td data-label="מסגרת תקציב">₪${b.monthly_limit.toLocaleString()}</td>
+                        <td data-label="הוצא החודש">₪${b.spent.toLocaleString()}</td>
+                        <td data-label="נותר בסעיף" style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
+                        <td data-label="פעולה"><button class="btn-danger" onclick="deleteBudgetRow(${b.id})">מחק</button></td>
                     </tr>`;
                 });
 
@@ -569,7 +576,7 @@ window.fetch = async function(url, options = {}) {
                 tbody.innerHTML = '';
 
                 if (expenses.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">אין הוצאות טיול רשומות</td></tr>';
+                    tbody.innerHTML = '<tr class="empty-state"><td colspan="5" style="text-align:center;">אין הוצאות טיול רשומות</td></tr>';
                 } else {
                             let totalExpenses = 0;
         expenses.forEach(ex => {
@@ -578,12 +585,11 @@ window.fetch = async function(url, options = {}) {
             const amt = ex.amount || 0;
             totalExpenses += amt;
             tbody.innerHTML += `<tr>
-                <td>${ex.date || ""}</td>
-                <td>${ex.sender || "-"}</td>
-                <td><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></td>
-                <td style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
-                <td>${ex.description || "-"}</td>
-                <td><button class="btn-danger" onclick="deleteTripExpenseItem(${id})">מחק</button></td>
+                <td data-label="תאריך">${ex.date || ""}</td>
+                <td data-label="קטגוריה"><b>${cat}</b></td>
+                <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
+                <td data-label="תיאור">${ex.description || "-"}</td>
+                <td data-label="פעולה"><button class="btn-danger" onclick="deleteTripExpenseItem(${id})">מחק</button></td>
             </tr>`;
         });
                 }
