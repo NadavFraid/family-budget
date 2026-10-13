@@ -62,6 +62,8 @@ window.fetch = async function(url, options = {}) {
         .btn-danger { background: #e74c3c; padding: 6px 12px; font-size: 13px; }
         .btn-danger:hover { background: #c0392b; }
         .chart-container { max-width: 400px; margin: 20px auto; }
+        .month-picker { align-items: center; }
+        .month-picker select { min-width: 180px; font-size: 15px; }
         @media (max-width: 640px) {
             body { padding: 8px; }
             .container { padding: 12px; border-radius: 10px; }
@@ -145,6 +147,7 @@ window.fetch = async function(url, options = {}) {
                 font-size: 14px;
             }
             #budgets-tab .mobile-card-table tfoot { display: none; }
+            .month-picker select { flex: 1; }
         }
     </style>
 </head>
@@ -154,6 +157,7 @@ window.fetch = async function(url, options = {}) {
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('expenses')">הוצאות אחרונות</button>
             <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
+            <button class="tab-btn" onclick="switchTab('monthly')">📅 סיכום חודשי</button>
             <button class="tab-btn trip-btn" onclick="switchTab('trip')">✈️ תקציב טיול</button>
         </div>
 
@@ -216,6 +220,63 @@ window.fetch = async function(url, options = {}) {
                     <tr class="empty-state"><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
                 <tfoot id="budgets-tfoot"></tfoot>
+            </table>
+        </div>
+
+        <div id="monthly-tab" class="tab-content">
+            <div class="form-group month-picker">
+                <label for="summary-month"><b>בחר חודש:</b></label>
+                <select id="summary-month" onchange="loadMonthlySummary()"></select>
+            </div>
+            <div class="summary-cards">
+                <div class="card spent">
+                    <h3>סך הוצאות בחודש</h3>
+                    <div class="value" id="monthly-spent">₪0</div>
+                </div>
+                <div class="card">
+                    <h3>סך מסגרות התקציב</h3>
+                    <div class="value" id="monthly-budget">₪0</div>
+                </div>
+                <div class="card remaining">
+                    <h3>יתרה / חריגה</h3>
+                    <div class="value" id="monthly-remaining">₪0</div>
+                </div>
+                <div class="card">
+                    <h3>מספר הוצאות</h3>
+                    <div class="value" id="monthly-count">0</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+            <h2>פילוח לפי קטגוריה</h2>
+            <table class="mobile-card-table">
+                <thead>
+                    <tr>
+                        <th>קטגוריה</th>
+                        <th>מסגרת תקציב</th>
+                        <th>הוצא בחודש</th>
+                        <th>נותר בסעיף</th>
+                    </tr>
+                </thead>
+                <tbody id="monthly-categories-table">
+                    <tr class="empty-state"><td colspan="4" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
+            </table>
+            <h2>הוצאות החודש</h2>
+            <table class="mobile-card-table">
+                <thead>
+                    <tr>
+                        <th>תאריך</th>
+                        <th>שולח</th>
+                        <th>קטגוריה</th>
+                        <th>סכום</th>
+                        <th>תיאור</th>
+                    </tr>
+                </thead>
+                <tbody id="monthly-expenses-table">
+                    <tr class="empty-state"><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
+                </tbody>
             </table>
         </div>
 
@@ -312,6 +373,10 @@ window.fetch = async function(url, options = {}) {
                 document.querySelector('button[onclick="switchTab(\'budgets\')"]').classList.add('active');
                 document.getElementById('budgets-tab').classList.add('active');
                 loadBudgets();
+            } else if (tabName === 'monthly') {
+                document.querySelector('button[onclick="switchTab(\'monthly\')"]').classList.add('active');
+                document.getElementById('monthly-tab').classList.add('active');
+                loadMonthlySummary();
             } else if (tabName === 'recurring') {
                 document.querySelector('button[onclick="switchTab(\'recurring\')"]').classList.add('active');
                 document.getElementById('recurring-tab').classList.add('active');
@@ -488,6 +553,91 @@ window.fetch = async function(url, options = {}) {
                 }
             } catch (err) {
                 console.error('שגיאה:', err);
+            }
+        }
+
+        const HEBREW_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+        let monthlyChart = null;
+
+        function formatMonthLabel(month) {
+            const [year, m] = month.split('-');
+            return `${HEBREW_MONTHS[parseInt(m, 10) - 1]} ${year}`;
+        }
+
+        async function loadSummaryMonths() {
+            const select = document.getElementById('summary-month');
+            const res = await fetch('/api/monthly-summary/months');
+            if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
+            const months = await res.json();
+            const previous = select.value;
+            select.innerHTML = months.map(m => `<option value="${m}">${formatMonthLabel(m)}</option>`).join('');
+            if (previous && months.includes(previous)) select.value = previous;
+        }
+
+        async function loadMonthlySummary() {
+            const catBody = document.getElementById('monthly-categories-table');
+            const expBody = document.getElementById('monthly-expenses-table');
+            try {
+                const select = document.getElementById('summary-month');
+                if (!select.options.length) await loadSummaryMonths();
+                const month = select.value;
+                const res = await fetch('/api/monthly-summary?month=' + encodeURIComponent(month));
+                if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
+                const summary = await res.json();
+
+                document.getElementById('monthly-spent').innerText = `₪${summary.totalSpent.toLocaleString()}`;
+                document.getElementById('monthly-budget').innerText = `₪${summary.totalBudget.toLocaleString()}`;
+                const remElem = document.getElementById('monthly-remaining');
+                remElem.innerText = `₪${summary.remaining.toLocaleString()}`;
+                remElem.style.color = summary.remaining < 0 ? '#c0392b' : '#27ae60';
+                document.getElementById('monthly-count').innerText = summary.expenseCount;
+
+                catBody.innerHTML = '';
+                if (summary.categories.length === 0) {
+                    catBody.innerHTML = '<tr class="empty-state"><td colspan="4" style="text-align:center;">אין נתונים לחודש זה</td></tr>';
+                } else {
+                    summary.categories.forEach(c => {
+                        const remainingColor = !c.limit ? 'inherit' : (c.remaining < 0 ? '#c0392b' : '#27ae60');
+                        catBody.innerHTML += `<tr>
+                            <td data-label="קטגוריה"><b>${c.category}</b></td>
+                            <td data-label="מסגרת תקציב">${c.limit ? '₪' + c.limit.toLocaleString() : '-'}</td>
+                            <td data-label="הוצא בחודש">₪${c.spent.toLocaleString()}</td>
+                            <td data-label="נותר בסעיף" style="color: ${remainingColor}; font-weight: bold;">${c.limit ? '₪' + c.remaining.toLocaleString() : '-'}</td>
+                        </tr>`;
+                    });
+                }
+
+                expBody.innerHTML = '';
+                if (summary.expenses.length === 0) {
+                    expBody.innerHTML = '<tr class="empty-state"><td colspan="5" style="text-align:center;">אין הוצאות בחודש זה</td></tr>';
+                } else {
+                    summary.expenses.forEach(ex => {
+                        expBody.innerHTML += `<tr>
+                            <td data-label="תאריך">${ex.date || ''}</td>
+                            <td data-label="שולח">${ex.sender || '-'}</td>
+                            <td data-label="קטגוריה"><b>${ex.category || 'ללא קטגוריה'}</b></td>
+                            <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${(ex.amount || 0).toLocaleString()}</td>
+                            <td data-label="תיאור">${ex.description || '-'}</td>
+                        </tr>`;
+                    });
+                }
+
+                const spentCategories = summary.categories.filter(c => c.spent > 0);
+                if (monthlyChart) monthlyChart.destroy();
+                monthlyChart = null;
+                if (spentCategories.length > 0 && window.Chart) {
+                    monthlyChart = new Chart(document.getElementById('monthlyChart'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: spentCategories.map(c => c.category),
+                            datasets: [{ data: spentCategories.map(c => c.spent) }]
+                        },
+                        options: { plugins: { legend: { position: 'bottom' } } }
+                    });
+                }
+            } catch (err) {
+                console.error('שגיאה בטעינת סיכום חודשי:', err);
+                catBody.innerHTML = `<tr class="empty-state"><td colspan="4" style="color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
             }
         }
 
