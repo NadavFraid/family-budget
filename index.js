@@ -10,7 +10,8 @@ const {
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
-    addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary
+    addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary,
+    getAvailableMonths, getMonthSummary
 } = require('./db');
 
 function removeSingletonLocks(dir) {
@@ -207,6 +208,16 @@ app.delete('/api/expenses/:id', async (req, res) => {
 });
 
 app.get('/api/stats', async (req, res) => { try { res.json(await getMonthlyStats()); } catch (err) { res.status(500).json({ error: err.message }); } });
+app.get('/api/monthly-summary/months', async (req, res) => {
+    try { res.json(await getAvailableMonths()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.get('/api/monthly-summary', async (req, res) => {
+    try {
+        const month = req.query.month || new Date().toISOString().slice(0, 7);
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'פורמט חודש לא תקין (YYYY-MM)' });
+        res.json(await getMonthSummary(month));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 app.get('/api/budgets', async (req, res) => {
     try {
         const budgets = await getBudgets();

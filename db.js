@@ -286,7 +286,69 @@ return new Promise((resolve, reject) => {
 });
 }
 
+function getAvailableMonths() {
+    return new Promise((resolve, reject) => {
+        db.all(
+            `SELECT DISTINCT strftime('%Y-%m', date) as month FROM expenses WHERE date IS NOT NULL ORDER BY month DESC`,
+            [],
+            (err, rows) => {
+                if (err) return reject(err);
+                const currentMonth = new Date().toISOString().slice(0, 7);
+                const months = (rows || []).map(r => r.month).filter(Boolean);
+                if (!months.includes(currentMonth)) months.unshift(currentMonth);
+                resolve(months.sort().reverse());
+            }
+        );
+    });
+}
+
+function getMonthSummary(month) {
+    return new Promise((resolve, reject) => {
+        db.all(
+            `SELECT * FROM expenses WHERE strftime('%Y-%m', date) = ? ORDER BY date DESC, id DESC`,
+            [month],
+            (err, expenses) => {
+                if (err) return reject(err);
+                db.all(`SELECT * FROM budgets`, [], (err2, budgets) => {
+                    if (err2) return reject(err2);
+                    const spentByCategory = {};
+                    let totalSpent = 0;
+                    (expenses || []).forEach(ex => {
+                        const cat = ex.category || 'ללא קטגוריה';
+                        const amt = ex.amount || 0;
+                        spentByCategory[cat] = (spentByCategory[cat] || 0) + amt;
+                        totalSpent += amt;
+                    });
+
+                    const limits = {};
+                    (budgets || []).forEach(b => { limits[b.category] = b.monthly_limit || 0; });
+
+                    const allCategories = new Set([...Object.keys(limits), ...Object.keys(spentByCategory)]);
+                    const categories = [...allCategories].map(category => {
+                        const limit = limits[category] || 0;
+                        const spent = spentByCategory[category] || 0;
+                        return { category, limit, spent, remaining: limit - spent };
+                    }).sort((a, b) => b.spent - a.spent);
+
+                    const totalBudget = Object.values(limits).reduce((sum, v) => sum + v, 0);
+                    resolve({
+                        month,
+                        totalSpent,
+                        totalBudget,
+                        remaining: totalBudget - totalSpent,
+                        expenseCount: (expenses || []).length,
+                        categories,
+                        expenses: expenses || []
+                    });
+                });
+            }
+        );
+    });
+}
+
 module.exports = {
+    getAvailableMonths,
+    getMonthSummary,
     deleteBudget,
     updateExpenseCategory,
     deleteLastTripExpense,
