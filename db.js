@@ -1,6 +1,25 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const dbPath = path.join(__dirname, 'data', 'budget.db');
+const fs = require('fs');
+const dataDir = path.join(__dirname, 'data');
+const dbPath = path.join(dataDir, 'budget.db');
+
+fs.mkdirSync(dataDir, { recursive: true });
+
+// תאריכים וחודשים מחושבים לפי אזור הזמן של המשפחה (ברירת מחדל: ישראל),
+// ולא לפי UTC, כדי שהוצאה מאוחר בלילה לא תירשם ליום או לחודש הקודם.
+const TZ_NAME = process.env.TZ_NAME || 'Asia/Jerusalem';
+const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ_NAME, year: 'numeric', month: '2-digit', day: '2-digit'
+});
+
+function todayStr() {
+    return dateFormatter.format(new Date()); // YYYY-MM-DD
+}
+
+function currentMonthStr() {
+    return todayStr().slice(0, 7); // YYYY-MM
+}
 
 const db = new sqlite3.Database(dbPath);
 
@@ -47,7 +66,7 @@ db.serialize(() => {
 
 function addExpense(sender, category, amount, description, raw_text = '') {
     return new Promise((resolve, reject) => {
-        const date = new Date().toISOString().slice(0, 10);
+        const date = todayStr();
         db.run(
             `INSERT INTO expenses (date, sender, category, amount, description, raw_text) VALUES (?, ?, ?, ?, ?, ?)`,
             [date, sender, category, amount, description, raw_text],
@@ -92,7 +111,7 @@ function getExpenses() {
 
 function getMonthlyStats() {
     return new Promise((resolve, reject) => {
-        const currentMonth = new Date().toISOString().slice(0, 7);
+        const currentMonth = currentMonthStr();
         db.all(
             `SELECT category, SUM(amount) as total FROM expenses WHERE strftime('%Y-%m', date) = ? GROUP BY category`,
             [currentMonth],
@@ -129,7 +148,7 @@ function setBudget(category, monthly_limit) {
 function getCategoryRemaining(category) {
     return new Promise(async (resolve, reject) => {
         try {
-            const currentMonth = new Date().toISOString().slice(0, 7);
+            const currentMonth = currentMonthStr();
             db.get(`SELECT monthly_limit FROM budgets WHERE category = ?`, [category], (err, bRow) => {
                 if (err) return reject(err);
                 const limit = bRow ? bRow.monthly_limit : 0;
@@ -182,10 +201,9 @@ function deleteRecurringExpense(id) {
 
 function processDueRecurringExpenses() {
     return new Promise((resolve, reject) => {
-        const today = new Date();
-        const dayOfMonth = today.getDate();
-        const dateStr = today.toISOString().slice(0, 10);
-        const monthStr = today.toISOString().slice(0, 7);
+        const dateStr = todayStr();
+        const dayOfMonth = parseInt(dateStr.slice(8, 10), 10);
+        const monthStr = dateStr.slice(0, 7);
 
         db.all(`SELECT * FROM recurring_expenses WHERE day_of_month = ?`, [dayOfMonth], async (err, rows) => {
             if (err) return reject(err);
@@ -205,7 +223,7 @@ function processDueRecurringExpenses() {
 /* פונקציות לתקציב טיול */
 function addTripExpense(category, amount, description) {
     return new Promise((resolve, reject) => {
-        const date = new Date().toISOString().slice(0, 10);
+        const date = todayStr();
         db.run(
             `INSERT INTO trip_expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
             [date, category, amount, description],
@@ -293,7 +311,7 @@ function getAvailableMonths() {
             [],
             (err, rows) => {
                 if (err) return reject(err);
-                const currentMonth = new Date().toISOString().slice(0, 7);
+                const currentMonth = currentMonthStr();
                 const months = (rows || []).map(r => r.month).filter(Boolean);
                 if (!months.includes(currentMonth)) months.unshift(currentMonth);
                 resolve(months.sort().reverse());
@@ -347,6 +365,8 @@ function getMonthSummary(month) {
 }
 
 module.exports = {
+    todayStr,
+    currentMonthStr,
     getAvailableMonths,
     getMonthSummary,
     deleteBudget,

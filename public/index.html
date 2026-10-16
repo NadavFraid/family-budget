@@ -1,21 +1,6 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-<script>
-const originalFetch = window.fetch;
-window.fetch = async function(url, options = {}) {
-    options.headers = options.headers || {};
-    const authHeader = 'Basic ' + btoa('family:Vngrf,VrtaubvAkh');
-    if (options.headers instanceof Headers) {
-        options.headers.set('Authorization', authHeader);
-    } else if (Array.isArray(options.headers)) {
-        options.headers.push(['Authorization', authHeader]);
-    } else {
-        options.headers['Authorization'] = authHeader;
-    }
-    return originalFetch(url, options);
-};
-</script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>תקציב משפחתי</title>
@@ -165,7 +150,7 @@ window.fetch = async function(url, options = {}) {
             <div class="chart-container">
                 <canvas id="statsChart"></canvas>
             </div>
-            <h2>רשימת הוצאות</h2>
+            <h2>100 ההוצאות האחרונות</h2>
             <table class="expenses-table mobile-card-table">
                 <thead>
                     <tr>
@@ -361,6 +346,29 @@ window.fetch = async function(url, options = {}) {
     <script>
         let myChart = null;
 
+        // מנקה טקסט לפני הצגה ב-HTML (מונע הזרקת קוד מתיאורים/קטגוריות)
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, ch => (
+                { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+            ));
+        }
+
+        function renderStatsChart(stats) {
+            const canvas = document.getElementById('statsChart');
+            if (!canvas || !window.Chart) return;
+            if (myChart) { myChart.destroy(); myChart = null; }
+            const rows = (stats || []).filter(r => r.total > 0);
+            if (rows.length === 0) return;
+            myChart = new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: rows.map(r => r.category || 'ללא קטגוריה'),
+                    datasets: [{ data: rows.map(r => r.total) }]
+                },
+                options: { plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -396,6 +404,14 @@ window.fetch = async function(url, options = {}) {
                 if (!res.ok) throw new Error("שגיאת שרת: " + res.status);
                 const expenses = await res.json();
 
+                let monthStats = [];
+                try {
+                    const statsRes = await fetch("/api/stats");
+                    if (statsRes.ok) monthStats = await statsRes.json();
+                } catch (e) { console.error("Stats error:", e); }
+                renderStatsChart(monthStats);
+                const monthTotal = monthStats.reduce((sum, r) => sum + (r.total || 0), 0);
+
                 tbody.innerHTML = "";
                 if (!Array.isArray(expenses) || expenses.length === 0) {
                     tbody.innerHTML = "<tr class='empty-state'><td colspan='6'>אין הוצאות להצגה</td></tr>";
@@ -409,12 +425,12 @@ window.fetch = async function(url, options = {}) {
             const amt = ex.amount || 0;
             totalExpenses += amt;
             tbody.innerHTML += `<tr>
-                <td data-label="תאריך">${ex.date || ""}</td>
-                <td data-label="שולח">${ex.sender || "-"}</td>
-                <td data-label="קטגוריה"><span><b>${cat}</b> <button onclick="editSingleExpenseCategory(${id}, \`${cat}\`)" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
+                <td data-label="תאריך">${esc(ex.date)}</td>
+                <td data-label="שולח">${esc(ex.sender || "-")}</td>
+                <td data-label="קטגוריה"><span><b>${esc(cat)}</b> <button class="edit-cat-btn" data-id="${Number(id)}" data-cat="${esc(cat)}" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
                 <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
-                <td data-label="תיאור">${ex.description || "-"}</td>
-                <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+                <td data-label="תיאור">${esc(ex.description || "-")}</td>
+                <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${Number(id)})">מחק</button></td>
             </tr>`;
         });
 
@@ -422,7 +438,7 @@ window.fetch = async function(url, options = {}) {
         if (tfoot) {
             tfoot.innerHTML = `<tr>
                 <td colspan="3"><b>סה"כ הוצאות החודש</b></td>
-                <td colspan="3" style="color: #c0392b; font-weight: bold;">₪${totalExpenses.toLocaleString()}</td>
+                <td colspan="3" style="color: #c0392b; font-weight: bold;">₪${monthTotal.toLocaleString()}</td>
             </tr>`;
         }
             } catch (err) {
@@ -470,11 +486,11 @@ window.fetch = async function(url, options = {}) {
 
                     const remainingColor = b.remaining < 0 ? '#c0392b' : '#27ae60';
                     tbody.innerHTML += `<tr>
-                        <td data-label="קטגוריה"><span><b>${b.category}</b> <button onclick="editBudgetCategory(${b.id}, \`${b.category}\`, ${b.monthly_limit})" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
+                        <td data-label="קטגוריה"><span><b>${esc(b.category)}</b> <button class="edit-budget-btn" data-id="${Number(b.id)}" data-cat="${esc(b.category)}" data-limit="${Number(b.monthly_limit)}" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
                         <td data-label="מסגרת תקציב">₪${b.monthly_limit.toLocaleString()}</td>
                         <td data-label="הוצא החודש">₪${b.spent.toLocaleString()}</td>
                         <td data-label="נותר בסעיף" style="color: ${remainingColor}; font-weight: bold;">₪${b.remaining.toLocaleString()}</td>
-                        <td data-label="פעולה"><button class="btn-danger" onclick="deleteBudgetRow(${b.id})">מחק</button></td>
+                        <td data-label="פעולה"><button class="btn-danger" onclick="deleteBudgetRow(${Number(b.id)})">מחק</button></td>
                     </tr>`;
                 });
 
@@ -599,7 +615,7 @@ window.fetch = async function(url, options = {}) {
                     summary.categories.forEach(c => {
                         const remainingColor = !c.limit ? 'inherit' : (c.remaining < 0 ? '#c0392b' : '#27ae60');
                         catBody.innerHTML += `<tr>
-                            <td data-label="קטגוריה"><b>${c.category}</b></td>
+                            <td data-label="קטגוריה"><b>${esc(c.category)}</b></td>
                             <td data-label="מסגרת תקציב">${c.limit ? '₪' + c.limit.toLocaleString() : '-'}</td>
                             <td data-label="הוצא בחודש">₪${c.spent.toLocaleString()}</td>
                             <td data-label="נותר בסעיף" style="color: ${remainingColor}; font-weight: bold;">${c.limit ? '₪' + c.remaining.toLocaleString() : '-'}</td>
@@ -613,11 +629,11 @@ window.fetch = async function(url, options = {}) {
                 } else {
                     summary.expenses.forEach(ex => {
                         expBody.innerHTML += `<tr>
-                            <td data-label="תאריך">${ex.date || ''}</td>
-                            <td data-label="שולח">${ex.sender || '-'}</td>
-                            <td data-label="קטגוריה"><b>${ex.category || 'ללא קטגוריה'}</b></td>
+                            <td data-label="תאריך">${esc(ex.date)}</td>
+                            <td data-label="שולח">${esc(ex.sender || '-')}</td>
+                            <td data-label="קטגוריה"><b>${esc(ex.category || 'ללא קטגוריה')}</b></td>
                             <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${(ex.amount || 0).toLocaleString()}</td>
-                            <td data-label="תיאור">${ex.description || '-'}</td>
+                            <td data-label="תיאור">${esc(ex.description || '-')}</td>
                         </tr>`;
                     });
                 }
@@ -653,8 +669,8 @@ window.fetch = async function(url, options = {}) {
                 } else {
                     items.forEach(item => {
                         tbody.innerHTML += `<tr>
-                            <td><b>${item.title}</b></td>
-                            <td>${item.category}</td>
+                            <td><b>${esc(item.title)}</b></td>
+                            <td>${esc(item.category)}</td>
                             <td style="color: #c0392b; font-weight:bold;">₪${item.amount.toLocaleString()}</td>
                             <td>${item.day_of_month} בחודש</td>
                             <td><button class="btn-danger" onclick="deleteRecurring(${item.id})">מחק</button></td>
@@ -735,11 +751,11 @@ window.fetch = async function(url, options = {}) {
             const amt = ex.amount || 0;
             totalExpenses += amt;
             tbody.innerHTML += `<tr>
-                <td data-label="תאריך">${ex.date || ""}</td>
-                <td data-label="קטגוריה"><b>${cat}</b></td>
+                <td data-label="תאריך">${esc(ex.date)}</td>
+                <td data-label="קטגוריה"><b>${esc(cat)}</b></td>
                 <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
-                <td data-label="תיאור">${ex.description || "-"}</td>
-                <td data-label="פעולה"><button class="btn-danger" onclick="deleteTripExpenseItem(${id})">מחק</button></td>
+                <td data-label="תיאור">${esc(ex.description || "-")}</td>
+                <td data-label="פעולה"><button class="btn-danger" onclick="deleteTripExpenseItem(${Number(id)})">מחק</button></td>
             </tr>`;
         });
                 }
@@ -869,6 +885,17 @@ window.fetch = async function(url, options = {}) {
                 document.getElementById('dynamic-cat-list').innerHTML = '<div style="color: red; text-align: center;">שגיאה בטעינת קטגוריות</div>';
             }
         }
+
+        // לחיצות על כפתורי העריכה (הנתונים עוברים דרך data-attributes ולא דרך קוד מוטמע)
+        document.addEventListener('click', e => {
+            const btn = e.target.closest('.edit-cat-btn, .edit-budget-btn');
+            if (!btn) return;
+            if (btn.classList.contains('edit-cat-btn')) {
+                editSingleExpenseCategory(Number(btn.dataset.id), btn.dataset.cat);
+            } else {
+                editBudgetCategory(Number(btn.dataset.id), btn.dataset.cat, Number(btn.dataset.limit));
+            }
+        });
 
         // אתחול מדויק עם טעינת העמוד
         window.addEventListener("DOMContentLoaded", () => {

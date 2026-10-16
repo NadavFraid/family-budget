@@ -11,7 +11,7 @@ const {
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
     addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary,
-    getAvailableMonths, getMonthSummary
+    getAvailableMonths, getMonthSummary, currentMonthStr
 } = require('./db');
 
 function removeSingletonLocks(dir) {
@@ -36,8 +36,29 @@ function removeSingletonLocks(dir) {
 
 removeSingletonLocks(path.join(__dirname, '.wwebjs_auth'));
 
-const AUTH_USER = 'family';
-const AUTH_PASS = 'Vngrf,VrtaubvAkh';
+const crypto = require('crypto');
+
+// פרטי ההזדהות נקראים ממשתני סביבה בלבד (לא נשמרים בקוד).
+const AUTH_USER = process.env.AUTH_USER || 'family';
+const AUTH_PASS = process.env.AUTH_PASS || '';
+// מפתח סודי לנתיב /api/quick-add (נשלח בכותרת x-api-key)
+const QUICK_ADD_KEY = process.env.QUICK_ADD_KEY || '';
+const TZ_NAME = process.env.TZ_NAME || 'Asia/Jerusalem';
+
+if (!AUTH_PASS) {
+    console.error('❌ חסר משתנה סביבה AUTH_PASS. הגדר סיסמה לאתר לפני הפעלת השרת.');
+    process.exit(1);
+}
+if (!QUICK_ADD_KEY) {
+    console.warn('⚠️ QUICK_ADD_KEY לא מוגדר - הנתיב /api/quick-add חסום עד שיוגדר מפתח.');
+}
+
+function safeEqual(a, b) {
+    const ha = crypto.createHash('sha256').update(String(a)).digest();
+    const hb = crypto.createHash('sha256').update(String(b)).digest();
+    return crypto.timingSafeEqual(ha, hb);
+}
+
 let TARGET_GROUP_ID = '';
 
 const HOME_BUDGET_GROUPS = ['120363429815455473@g.us', 'תקציב משפחתי'];
@@ -111,7 +132,7 @@ async function sendBackupEmail() {
     }
 }
 
-cron.schedule('0 1 * * *', () => sendBackupEmail());
+cron.schedule('0 1 * * *', () => sendBackupEmail(), { timezone: TZ_NAME });
 
 cron.schedule('0 8 * * *', async () => {
     try {
@@ -129,7 +150,7 @@ cron.schedule('0 8 * * *', async () => {
     } catch (err) {
         console.error('שגיאה בעיבוד הוראות קבע:', err);
     }
-});
+}, { timezone: TZ_NAME });
 
 const app = express();
 
@@ -142,6 +163,12 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 app.post('/api/quick-add', async (req, res) => {
+    if (!QUICK_ADD_KEY) {
+        return res.status(503).json({ error: 'quick-add מושבת: לא הוגדר QUICK_ADD_KEY בשרת' });
+    }
+    if (!safeEqual(req.headers['x-api-key'] || '', QUICK_ADD_KEY)) {
+        return res.status(401).json({ error: 'מפתח לא תקין' });
+    }
     try {
         let { amount, category, description, sender } = req.body;
         let parsedAmount = 0;
@@ -182,11 +209,13 @@ app.get(publicIconAssets, (req, res) => {
 });
 
 app.use((req, res, next) => {
-    const auth = { login: AUTH_USER, password: AUTH_PASS };
     const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
-    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+    const decoded = Buffer.from(b64auth, 'base64').toString();
+    const sep = decoded.indexOf(':');
+    const login = sep >= 0 ? decoded.slice(0, sep) : '';
+    const password = sep >= 0 ? decoded.slice(sep + 1) : '';
 
-    if (login && password && login === auth.login && password === auth.password) return next();
+    if (login && password && safeEqual(login, AUTH_USER) && safeEqual(password, AUTH_PASS)) return next();
     res.set('WWW-Authenticate', 'Basic realm="Family Budget"');
     res.status(401).send('נדרשת הזדהות לצפייה בתקציב המשפחתי');
 });
@@ -213,7 +242,7 @@ app.get('/api/monthly-summary/months', async (req, res) => {
 });
 app.get('/api/monthly-summary', async (req, res) => {
     try {
-        const month = req.query.month || new Date().toISOString().slice(0, 7);
+        const month = req.query.month || currentMonthStr();
         if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'פורמט חודש לא תקין (YYYY-MM)' });
         res.json(await getMonthSummary(month));
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -225,7 +254,7 @@ app.get('/api/budgets', async (req, res) => {
         const combined = budgets.map(b => {
             const stat = stats.find(s => s.category === b.category);
             const spent = stat ? stat.total : 0;
-            return { category: b.category, monthly_limit: b.monthly_limit, spent: spent, remaining: b.monthly_limit - spent };
+            return { id: b.id, category: b.category, monthly_limit: b.monthly_limit, spent: spent, remaining: b.monthly_limit - spent };
         });
         res.json(combined);
     } catch (err) { res.status(500).json({ error: err.message }); }
