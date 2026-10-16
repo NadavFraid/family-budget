@@ -6,12 +6,13 @@ const fs = require('fs');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const { createMessageHandler } = require('./whatsapp-message-handler');
-const { 
-    addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats, 
+const { validateNewExpense } = require('./expense-input');
+const {
+    addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats,
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
     addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary,
-    getAvailableMonths, getMonthSummary, currentMonthStr
+    getAvailableMonths, getMonthSummary, currentMonthStr, todayStr
 } = require('./db');
 
 function removeSingletonLocks(dir) {
@@ -228,6 +229,22 @@ app.get('/api/test-backup', async (req, res) => {
 });
 
 app.get('/api/expenses', async (req, res) => { try { res.json(await getExpenses()); } catch (err) { res.status(500).json({ error: err.message }); } });
+
+// התאריך של היום לפי אזור הזמן של המשפחה (לטופס הוספת הוצאה, כדי לא להסתמך על שעון המכשיר)
+app.get('/api/today', (req, res) => res.json({ today: todayStr() }));
+
+// הוספת הוצאה ידנית מהאתר (עם תאריך אופציונלי; ברירת מחדל: היום)
+app.post('/api/expenses', async (req, res) => {
+    const result = validateNewExpense(req.body, todayStr());
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    try {
+        const { amount, category, description, date } = result.value;
+        const id = await addExpense('האתר', category, amount, description, '', date);
+        res.status(201).json({ success: true, id, amount, category, description, date });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.delete('/api/expenses/:id', async (req, res) => {
     try {

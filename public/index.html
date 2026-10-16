@@ -49,6 +49,11 @@
         .chart-container { max-width: 400px; margin: 20px auto; }
         .month-picker { align-items: center; }
         .month-picker select { min-width: 180px; font-size: 15px; }
+        .add-expense input { flex: 1 1 140px; min-width: 0; font-size: 16px; }
+        .add-expense .form-message { flex-basis: 100%; margin: 0; font-size: 14px; min-height: 1.2em; }
+        .add-expense .form-message.ok { color: #1e8449; }
+        .add-expense .form-message.error { color: #c0392b; }
+        .add-expense button:disabled { opacity: 0.6; cursor: wait; }
         @media (max-width: 640px) {
             body { padding: 8px; }
             .container { padding: 12px; border-radius: 10px; }
@@ -147,6 +152,16 @@
         </div>
 
         <div id="expenses-tab" class="tab-content active">
+            <h2>הוספת הוצאה</h2>
+            <form id="add-expense-form" class="form-group add-expense" autocomplete="off">
+                <input type="number" id="new-exp-amount" placeholder="סכום (₪)" inputmode="decimal" step="0.01" min="0.01" required>
+                <input type="text" id="new-exp-category" list="category-options" placeholder="קטגוריה" maxlength="50" required>
+                <datalist id="category-options"></datalist>
+                <input type="date" id="new-exp-date" aria-label="תאריך ההוצאה" required>
+                <input type="text" id="new-exp-desc" placeholder="תיאור (לא חובה)" maxlength="200">
+                <button type="submit" id="new-exp-submit">הוסף הוצאה</button>
+                <p id="new-exp-msg" class="form-message" role="status" aria-live="polite"></p>
+            </form>
             <div class="chart-container">
                 <canvas id="statsChart"></canvas>
             </div>
@@ -444,6 +459,93 @@
             } catch (err) {
                 console.error("Load error:", err);
                 tbody.innerHTML = `<tr class="empty-state"><td colspan="6" style="color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
+            }
+        }
+
+        // ---- טופס הוספת הוצאה ----
+        function showExpenseFormMessage(text, kind) {
+            const el = document.getElementById('new-exp-msg');
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'form-message' + (kind ? ' ' + kind : '');
+        }
+
+        function formatDisplayDate(dateStr) {
+            const [y, m, d] = String(dateStr).split('-');
+            return `${Number(d)}/${Number(m)}/${y}`;
+        }
+
+        // קטגוריות להשלמה אוטומטית: אלה שיש להן תקציב ואלה שהוצאו בהן החודש
+        async function refreshCategoryOptions() {
+            const list = document.getElementById('category-options');
+            if (!list) return;
+            const names = new Set();
+            for (const url of ['/api/budgets', '/api/stats']) {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) continue;
+                    (await res.json()).forEach(row => { if (row && row.category) names.add(row.category); });
+                } catch (e) { console.error('שגיאה בטעינת קטגוריות:', e); }
+            }
+            list.innerHTML = [...names].sort((a, b) => a.localeCompare(b, 'he'))
+                .map(name => `<option value="${esc(name)}"></option>`).join('');
+        }
+
+        async function initExpenseForm() {
+            const form = document.getElementById('add-expense-form');
+            if (!form) return;
+            form.addEventListener('submit', submitNewExpense);
+
+            const dateInput = document.getElementById('new-exp-date');
+            try {
+                const res = await fetch('/api/today');
+                if (res.ok) {
+                    const { today } = await res.json();
+                    dateInput.value = today;
+                    dateInput.max = today; // אי אפשר להזין תאריך עתידי
+                }
+            } catch (e) { console.error('שגיאה בטעינת תאריך היום:', e); }
+            refreshCategoryOptions();
+        }
+
+        async function submitNewExpense(event) {
+            event.preventDefault();
+            const submitBtn = document.getElementById('new-exp-submit');
+            const amountInput = document.getElementById('new-exp-amount');
+            const categoryInput = document.getElementById('new-exp-category');
+            const dateInput = document.getElementById('new-exp-date');
+            const descInput = document.getElementById('new-exp-desc');
+
+            submitBtn.disabled = true;
+            showExpenseFormMessage('שומר...', '');
+            try {
+                const res = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        amount: amountInput.value,
+                        category: categoryInput.value,
+                        date: dateInput.value,
+                        description: descInput.value
+                    })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'שגיאת שרת: ' + res.status);
+
+                showExpenseFormMessage(
+                    `נוספה הוצאה: ₪${Number(data.amount).toLocaleString()} · ${data.category} · ${formatDisplayDate(data.date)}`,
+                    'ok'
+                );
+                // התאריך והקטגוריה נשארים כדי להקל על הזנת כמה הוצאות ברצף
+                amountInput.value = '';
+                descInput.value = '';
+                amountInput.focus();
+                loadData();
+                refreshCategoryOptions();
+            } catch (err) {
+                showExpenseFormMessage('ההוצאה לא נשמרה: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
             }
         }
 
@@ -903,6 +1005,7 @@
             loadBudgets();
             loadRecurring();
             loadTripData();
+            initExpenseForm();
         });
     </script>
 </body>
