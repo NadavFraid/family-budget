@@ -1,7 +1,6 @@
 node_modules/
 .wwebjs_auth/
-
+.wwebjs_cache/
 data/
-.wwebjs_auth/
-node_modules/
+*.db
 .env
