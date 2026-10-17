@@ -101,6 +101,15 @@ function deleteLastExpense() {
     });
 }
 
+// עותק עקבי של מסד הנתונים לקובץ חדש (VACUUM INTO), גם בזמן שהאתר כותב אליו.
+// העתקת קובץ ה-db הפעיל ישירות עלולה לתפוס אותו באמצע כתיבה.
+function snapshotTo(destPath) {
+    return new Promise((resolve, reject) => {
+        if (fs.existsSync(destPath)) return reject(new Error('קובץ היעד כבר קיים'));
+        db.run('VACUUM INTO ?', [destPath], err => (err ? reject(err) : resolve(destPath)));
+    });
+}
+
 function deleteExpense(id) {
     return new Promise((resolve, reject) => {
         db.run(`DELETE FROM expenses WHERE id = ?`, [id], function(err) {
@@ -338,6 +347,20 @@ return new Promise((resolve, reject) => {
 });
 }
 
+// עריכת כל שדות ההוצאה. השולח והטקסט המקורי של ההודעה נשארים כמו שהיו.
+function updateExpense(id, { amount, category, description, date }) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `UPDATE expenses SET amount = ?, category = ?, description = ?, date = ? WHERE id = ?`,
+            [amount, category, description, date, id],
+            function(err) {
+                if (err) return reject(err);
+                resolve({ id: Number(id), amount, category, description, date, changes: this.changes });
+            }
+        );
+    });
+}
+
 function getAvailableMonths() {
     return new Promise((resolve, reject) => {
         db.all(
@@ -400,12 +423,15 @@ function getMonthSummary(month) {
 
 module.exports = {
     UNCATEGORIZED_LABEL,
+    snapshotTo,
+    dataDir,
     todayStr,
     currentMonthStr,
     getAvailableMonths,
     getMonthSummary,
     deleteBudget,
     updateExpenseCategory,
+    updateExpense,
     deleteLastTripExpense,
     addExpense,
     deleteLastExpense,

@@ -98,6 +98,17 @@ async function run() {
     assert.deepEqual(injection, [], 'category is a bound parameter, not SQL');
     assert.ok((await db.getExpenses()).length > 0, 'expenses table is intact');
 
+    // עריכת הוצאה: כל השדות משתנים, השולח והטקסט המקורי נשארים
+    const editId = await db.addExpense('דנה', 'סופר', 80, 'לפני עריכה', 'הודעה מקורית', '2026-09-03');
+    const edited = await db.updateExpense(editId, { amount: 95.5, category: 'פארם', description: 'אחרי עריכה', date: '2026-09-01' });
+    assert.equal(edited.changes, 1);
+    const afterEdit = (await db.getExpenses({ month: '2026-09' })).find(e => e.id === editId);
+    assert.deepEqual(
+        { amount: afterEdit.amount, category: afterEdit.category, description: afterEdit.description, date: afterEdit.date, sender: afterEdit.sender, raw_text: afterEdit.raw_text },
+        { amount: 95.5, category: 'פארם', description: 'אחרי עריכה', date: '2026-09-01', sender: 'דנה', raw_text: 'הודעה מקורית' }
+    );
+    assert.equal((await db.updateExpense(999999, { amount: 1, category: 'x', description: '', date: '2026-09-01' })).changes, 0, 'unknown id changes nothing');
+
     // הוצאות טיול
     await db.addTripExpense('מלונות', 700, 'עם תאריך', '2026-10-01');
     await db.addTripExpense('מלונות', 300, 'בלי תאריך');

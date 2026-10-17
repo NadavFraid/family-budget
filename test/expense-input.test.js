@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { validateNewExpense, parseExpenseListQuery } = require('../expense-input');
+const { validateNewExpense, validateExpenseUpdate, parseExpenseListQuery } = require('../expense-input');
 
 const TODAY = '2026-10-16';
 
@@ -75,5 +75,15 @@ for (const month of ['2026-13', '2026-00', '2026-1', '2026-10-01', 'october', '.
 }
 assert.equal(parseExpenseListQuery({ category: 'א'.repeat(201) }, MONTH).ok, false);
 assert.equal(parseExpenseListQuery({ category: 'א'.repeat(200) }, MONTH).ok, true);
+
+// עריכת הוצאה: אותם כללים, אבל התאריך חובה
+const update = body => validateExpenseUpdate(body, TODAY);
+assert.deepEqual(update({ amount: '12,5', category: ' פארם ', description: ' x ', date: '2026-10-01' }),
+    { ok: true, value: { amount: 12.5, category: 'פארם', description: 'x', date: '2026-10-01' } });
+assert.equal(update({ amount: 10, category: 'סופר' }).ok, false, 'edit without a date is rejected');
+assert.equal(update({ amount: 10, category: 'סופר', date: '  ' }).ok, false);
+assert.equal(update({ amount: 10, category: 'סופר', date: '2026-10-17' }).ok, false, 'future date');
+assert.equal(update({ amount: -1, category: 'סופר', date: '2026-10-01' }).ok, false, 'bad amount');
+assert.equal(update(undefined).ok, false);
 
 console.log('Expense input validation tests passed');
