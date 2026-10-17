@@ -54,6 +54,11 @@
         .add-expense .form-message.ok { color: #1e8449; }
         .add-expense .form-message.error { color: #c0392b; }
         .add-expense button:disabled { opacity: 0.6; cursor: wait; }
+        .chart-hint { text-align: center; color: #7f8c8d; font-size: 13px; margin: -8px 0 6px; }
+        .list-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .list-header h2 { margin: 14px 0 8px; }
+        .btn-secondary { background: #34495e; padding: 8px 14px; }
+        .btn-secondary:hover { background: #2c3e50; }
         @media (max-width: 640px) {
             body { padding: 8px; }
             .container { padding: 12px; border-radius: 10px; }
@@ -165,7 +170,11 @@
             <div class="chart-container">
                 <canvas id="statsChart"></canvas>
             </div>
-            <h2>100 ההוצאות האחרונות</h2>
+            <p id="chart-hint" class="chart-hint" hidden>לחצו על פלח בעוגה (או על שם קטגוריה) כדי לראות רק את ההוצאות שלה החודש</p>
+            <div class="list-header">
+                <h2 id="expenses-heading">100 ההוצאות האחרונות</h2>
+                <button type="button" id="show-all-btn" class="btn-secondary" onclick="clearCategoryFilter()" hidden>↩ הצג את כל ההוצאות</button>
+            </div>
             <table class="expenses-table mobile-card-table">
                 <thead>
                     <tr>
@@ -368,20 +377,90 @@
             ));
         }
 
+        // ---- סינון הוצאות לפי קטגוריה (לחיצה על פלח בעוגה או על שם הקטגוריה במקרא) ----
+        const UNCATEGORIZED = 'ללא קטגוריה';
+        const SELECTED_SLICE_OFFSET = 24;
+        let selectedCategory = null; // null = כל ההוצאות
+        let serverToday = null;      // YYYY-MM-DD לפי שעון השרת (מתמלא בטעינת הטופס)
+        let monthStatsTotal = 0;     // סך הוצאות החודש הנוכחי, כפי שהוא מופיע בעוגה
+
+        function currentMonthLabel() {
+            return serverToday ? formatMonthLabel(serverToday.slice(0, 7)) : 'החודש';
+        }
+
         function renderStatsChart(stats) {
             const canvas = document.getElementById('statsChart');
+            const hint = document.getElementById('chart-hint');
+            if (hint) hint.hidden = true;
             if (!canvas || !window.Chart) return;
             if (myChart) { myChart.destroy(); myChart = null; }
             const rows = (stats || []).filter(r => r.total > 0);
             if (rows.length === 0) return;
+            const labels = rows.map(r => r.category || UNCATEGORIZED);
             myChart = new Chart(canvas, {
                 type: 'doughnut',
                 data: {
-                    labels: rows.map(r => r.category || 'ללא קטגוריה'),
-                    datasets: [{ data: rows.map(r => r.total) }]
+                    labels,
+                    datasets: [{
+                        data: rows.map(r => r.total),
+                        offset: labels.map(label => (label === selectedCategory ? SELECTED_SLICE_OFFSET : 0))
+                    }]
                 },
-                options: { plugins: { legend: { position: 'bottom' } } }
+                options: {
+                    layout: { padding: SELECTED_SLICE_OFFSET / 2 },
+                    onClick: (event, elements, chart) => {
+                        if (!elements || elements.length === 0) return;
+                        selectCategory(chart.data.labels[elements[0].index]);
+                    },
+                    onHover: (event, elements, chart) => {
+                        chart.canvas.style.cursor = elements && elements.length ? 'pointer' : 'default';
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            // לחיצה על שם קטגוריה במקרא מסננת, במקום להסתיר את הפלח (ברירת המחדל של Chart.js)
+                            onClick: (event, legendItem, legend) => selectCategory(legend.chart.data.labels[legendItem.index])
+                        }
+                    }
+                }
             });
+            if (hint) hint.hidden = false;
+        }
+
+        // מבליט את הפלח שנבחר בלי לבנות את העוגה מחדש
+        function highlightSelectedSlice() {
+            if (!myChart) return;
+            myChart.data.datasets[0].offset = myChart.data.labels.map(
+                label => (label === selectedCategory ? SELECTED_SLICE_OFFSET : 0)
+            );
+            myChart.update();
+        }
+
+        function selectCategory(category) {
+            // לחיצה שנייה על אותו פלח מבטלת את הסינון
+            selectedCategory = category === selectedCategory ? null : category;
+            highlightSelectedSlice();
+            loadExpenseList().then(() => {
+                if (!selectedCategory) return;
+                const heading = document.getElementById('expenses-heading');
+                if (heading) heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
+
+        function clearCategoryFilter() {
+            selectedCategory = null;
+            highlightSelectedSlice();
+            loadExpenseList();
+        }
+
+        function updateExpenseListHeader() {
+            const heading = document.getElementById('expenses-heading');
+            const showAll = document.getElementById('show-all-btn');
+            if (!heading || !showAll) return;
+            heading.textContent = selectedCategory
+                ? `הוצאות בקטגוריה: ${selectedCategory} · ${currentMonthLabel()}`
+                : '100 ההוצאות האחרונות';
+            showAll.hidden = !selectedCategory;
         }
 
         function switchTab(tabName) {
@@ -411,55 +490,75 @@
             }
         }
 
-        async function loadData() {
-            const tbody = document.getElementById("expenses-table");
+        // טוען את הרשימה (כל ההוצאות, או רק של הקטגוריה שנבחרה בעוגה)
+        async function loadExpenseList() {
+            const tbody = document.getElementById('expenses-table');
+            const tfoot = document.getElementById('expenses-tfoot');
             if (!tbody) return;
+            const category = selectedCategory;
+            updateExpenseListHeader();
             try {
-                const res = await fetch("/api/expenses");
-                if (!res.ok) throw new Error("שגיאת שרת: " + res.status);
+                const url = category ? '/api/expenses?category=' + encodeURIComponent(category) : '/api/expenses';
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
                 const expenses = await res.json();
+                if (category !== selectedCategory) return; // בינתיים נבחרה קטגוריה אחרת; התשובה הזו התיישנה
 
-                let monthStats = [];
-                try {
-                    const statsRes = await fetch("/api/stats");
-                    if (statsRes.ok) monthStats = await statsRes.json();
-                } catch (e) { console.error("Stats error:", e); }
-                renderStatsChart(monthStats);
-                const monthTotal = monthStats.reduce((sum, r) => sum + (r.total || 0), 0);
-
-                tbody.innerHTML = "";
                 if (!Array.isArray(expenses) || expenses.length === 0) {
-                    tbody.innerHTML = "<tr class='empty-state'><td colspan='6'>אין הוצאות להצגה</td></tr>";
+                    const emptyText = category ? 'אין הוצאות בקטגוריה זו החודש' : 'אין הוצאות להצגה';
+                    tbody.innerHTML = `<tr class="empty-state"><td colspan="6" style="text-align:center;">${emptyText}</td></tr>`;
+                    if (tfoot) tfoot.innerHTML = '';
                     return;
                 }
 
-                        let totalExpenses = 0;
-        expenses.forEach(ex => {
-            const cat = ex.category || "ללא קטגוריה";
-            const id = ex.id;
-            const amt = ex.amount || 0;
-            totalExpenses += amt;
-            tbody.innerHTML += `<tr>
-                <td data-label="תאריך">${esc(ex.date)}</td>
-                <td data-label="שולח">${esc(ex.sender || "-")}</td>
-                <td data-label="קטגוריה"><span><b>${esc(cat)}</b> <button class="edit-cat-btn" data-id="${Number(id)}" data-cat="${esc(cat)}" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
-                <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
-                <td data-label="תיאור">${esc(ex.description || "-")}</td>
-                <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${Number(id)})">מחק</button></td>
-            </tr>`;
-        });
+                let listTotal = 0;
+                tbody.innerHTML = expenses.map(ex => {
+                    const cat = ex.category || UNCATEGORIZED;
+                    const id = Number(ex.id);
+                    const amt = ex.amount || 0;
+                    listTotal += amt;
+                    return `<tr>
+                        <td data-label="תאריך">${esc(ex.date)}</td>
+                        <td data-label="שולח">${esc(ex.sender || '-')}</td>
+                        <td data-label="קטגוריה"><span><b>${esc(cat)}</b> <button class="edit-cat-btn" data-id="${id}" data-cat="${esc(cat)}" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
+                        <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
+                        <td data-label="תיאור">${esc(ex.description || '-')}</td>
+                        <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+                    </tr>`;
+                }).join('');
 
-        const tfoot = document.getElementById("expenses-tfoot");
-        if (tfoot) {
-            tfoot.innerHTML = `<tr>
-                <td colspan="3"><b>סה"כ הוצאות החודש</b></td>
-                <td colspan="3" style="color: #c0392b; font-weight: bold;">₪${monthTotal.toLocaleString()}</td>
-            </tr>`;
-        }
+                if (tfoot) {
+                    const label = category ? `סה"כ ${esc(category)} החודש (${expenses.length})` : 'סה"כ הוצאות החודש';
+                    const total = category ? listTotal : monthStatsTotal;
+                    tfoot.innerHTML = `<tr>
+                        <td colspan="3"><b>${label}</b></td>
+                        <td colspan="3" style="color: #c0392b; font-weight: bold;">₪${(Math.round(total * 100) / 100).toLocaleString()}</td>
+                    </tr>`;
+                }
             } catch (err) {
-                console.error("Load error:", err);
-                tbody.innerHTML = `<tr class="empty-state"><td colspan="6" style="color:red;">תקלה בטעינה: ${err.message}</td></tr>`;
+                console.error('Load error:', err);
+                tbody.innerHTML = `<tr class="empty-state"><td colspan="6" style="color:red;">תקלה בטעינה: ${esc(err.message)}</td></tr>`;
             }
+        }
+
+        async function loadData() {
+            if (!document.getElementById('expenses-table')) return;
+            try {
+                const statsRes = await fetch('/api/stats');
+                if (!statsRes.ok) throw new Error('שגיאת שרת: ' + statsRes.status);
+                const monthStats = await statsRes.json();
+                monthStatsTotal = monthStats.reduce((sum, r) => sum + (r.total || 0), 0);
+                // קטגוריה שנבחרה ושכבר אין בה הוצאות החודש (למשל אחרי מחיקה) לא נשארת מסוננת
+                if (selectedCategory && !monthStats.some(r => (r.category || UNCATEGORIZED) === selectedCategory && r.total > 0)) {
+                    selectedCategory = null;
+                }
+                renderStatsChart(monthStats);
+            } catch (e) {
+                console.error('Stats error:', e);
+                monthStatsTotal = 0;
+                renderStatsChart([]);
+            }
+            await loadExpenseList();
         }
 
         // ---- טופס הוספת הוצאה ----
@@ -501,6 +600,7 @@
                 const res = await fetch('/api/today');
                 if (res.ok) {
                     const { today } = await res.json();
+                    serverToday = today;
                     dateInput.value = today;
                     dateInput.max = today; // אי אפשר להזין תאריך עתידי
                 }
@@ -972,7 +1072,10 @@
                                 body: JSON.stringify({ category: c })
                             });
                             if (updateRes.ok) {
-                                location.reload();
+                                // בלי רענון דף, כדי שהסינון לפי קטגוריה לא יאבד
+                                overlay.remove();
+                                loadData();
+                                refreshCategoryOptions();
                             } else {
                                 const errData = await updateRes.json().catch(() => ({}));
                                 alert('שגיאה בעדכון: ' + (errData.error || 'שגיאת שרת'));

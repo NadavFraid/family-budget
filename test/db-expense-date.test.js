@@ -73,6 +73,31 @@ async function run() {
     const currentGrocery = await db.getCategoryRemaining('סופר');
     assert.equal(currentGrocery.spent, 210, 'default month is the current month (100 + 110)');
 
+    // סינון הרשימה לפי קטגוריה וחודש (לחיצה על פלח בעוגה)
+    const currentMonth = today.slice(0, 7);
+    await db.addExpense('בדיקה', null, 6, 'ללא קטגוריה (null)', 'raw', '2026-09-10');
+    await db.addExpense('בדיקה', '', 7, 'ללא קטגוריה (ריק)', 'raw', '2026-09-11');
+
+    const groceryInSeptember = await db.getExpenses({ category: 'סופר', month: '2026-09' });
+    assert.deepEqual(groceryInSeptember.map(e => e.amount), [200]);
+
+    const groceryNow = await db.getExpenses({ category: 'סופר', month: currentMonth });
+    assert.deepEqual(groceryNow.map(e => e.description), ['תאריך ריק', 'ללא תאריך'], 'same day: last typed first');
+
+    const groceryEver = await db.getExpenses({ category: 'סופר' });
+    assert.deepEqual(groceryEver.map(e => e.date), [today, today, '2026-09-03'], 'without month: all months, newest date first');
+
+    const septemberAll = await db.getExpenses({ month: '2026-09' });
+    assert.equal(septemberAll.length, 4, 'month only: every category in that month');
+
+    const uncategorized = await db.getExpenses({ category: db.UNCATEGORIZED_LABEL, month: '2026-09' });
+    assert.deepEqual(uncategorized.map(e => e.amount), [7, 6], 'NULL and empty categories match the "ללא קטגוריה" slice');
+
+    assert.deepEqual(await db.getExpenses({ category: 'קטגוריה שלא קיימת', month: '2026-09' }), []);
+    const injection = await db.getExpenses({ category: "'; DROP TABLE expenses; --" });
+    assert.deepEqual(injection, [], 'category is a bound parameter, not SQL');
+    assert.ok((await db.getExpenses()).length > 0, 'expenses table is intact');
+
     // הוצאות טיול
     await db.addTripExpense('מלונות', 700, 'עם תאריך', '2026-10-01');
     await db.addTripExpense('מלונות', 300, 'בלי תאריך');

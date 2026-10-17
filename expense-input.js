@@ -6,6 +6,28 @@ const MAX_AMOUNT = 10000000;
 const MAX_CATEGORY_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 200;
 const MIN_DATE = '2000-01-01';
+// קטגוריות שנוצרות מהודעות וואטסאפ יכולות להיות ארוכות יותר, לכן הסינון מקבל יותר מ-MAX_CATEGORY_LENGTH
+const MAX_FILTER_CATEGORY_LENGTH = 200;
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * פענוח פרמטרי הסינון של רשימת ההוצאות (?category=...&month=YYYY-MM).
+ * בלי month ועם category: החודש הנוכחי (כמו העוגה באתר). בלי שניהם: אין סינון.
+ * @returns {{ok: true, value: {category: string|null, month: string|null}} | {ok: false, error: string}}
+ */
+function parseExpenseListQuery(query, currentMonth) {
+    const input = query && typeof query === 'object' ? query : {};
+    const category = typeof input.category === 'string' ? input.category.trim() : '';
+    const month = typeof input.month === 'string' ? input.month.trim() : '';
+
+    if (category.length > MAX_FILTER_CATEGORY_LENGTH) return { ok: false, error: 'שם הקטגוריה ארוך מדי' };
+    if (month && !MONTH_PATTERN.test(month)) return { ok: false, error: 'פורמט חודש לא תקין (YYYY-MM)' };
+
+    return {
+        ok: true,
+        value: { category: category || null, month: month || (category ? currentMonth : null) }
+    };
+}
 
 /**
  * בדיקת קלט להוספת הוצאה ידנית מהאתר.
@@ -38,4 +60,4 @@ function validateNewExpense(body, today = todayInTz()) {
     };
 }
 
-module.exports = { validateNewExpense };
+module.exports = { validateNewExpense, parseExpenseListQuery };
