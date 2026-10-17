@@ -6,7 +6,7 @@ const fs = require('fs');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const { createMessageHandler } = require('./whatsapp-message-handler');
-const { validateNewExpense } = require('./expense-input');
+const { validateNewExpense, parseExpenseListQuery } = require('./expense-input');
 const {
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats,
     getBudgets, setBudget, getCategoryRemaining,
@@ -228,7 +228,16 @@ app.get('/api/test-backup', async (req, res) => {
     res.json(result);
 });
 
-app.get('/api/expenses', async (req, res) => { try { res.json(await getExpenses()); } catch (err) { res.status(500).json({ error: err.message }); } });
+// בלי פרמטרים: 100 ההוצאות האחרונות. ?category=...[&month=YYYY-MM]: הוצאות הקטגוריה (ברירת מחדל: החודש הנוכחי)
+app.get('/api/expenses', async (req, res) => {
+    const filter = parseExpenseListQuery(req.query, currentMonthStr());
+    if (!filter.ok) return res.status(400).json({ error: filter.error });
+    try {
+        res.json(await getExpenses(filter.value));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // התאריך של היום לפי אזור הזמן של המשפחה (לטופס הוספת הוצאה, כדי לא להסתמך על שעון המכשיר)
 app.get('/api/today', (req, res) => res.json({ today: todayStr() }));

@@ -110,10 +110,31 @@ function deleteExpense(id) {
     });
 }
 
-function getExpenses() {
+// התווית שהאתר מציג להוצאות בלי קטגוריה (גם בעוגה), כדי שאפשר יהיה לסנן לפיה
+const UNCATEGORIZED_LABEL = 'ללא קטגוריה';
+
+// בלי פרמטרים: 100 ההוצאות האחרונות. עם category ו/או month (YYYY-MM): ההוצאות המתאימות (עד 500).
+function getExpenses({ category = null, month = null } = {}) {
     return new Promise((resolve, reject) => {
+        const where = [];
+        const params = [];
+        if (month) {
+            where.push(`strftime('%Y-%m', date) = ?`);
+            params.push(month);
+        }
+        if (category) {
+            if (category === UNCATEGORIZED_LABEL) {
+                where.push(`(category IS NULL OR TRIM(category) = '' OR category = ?)`);
+                params.push(category);
+            } else {
+                where.push(`category = ?`);
+                params.push(category);
+            }
+        }
+        const limit = category || month ? 500 : 100;
         // לפי תאריך ההוצאה (לא סדר ההקלדה), כדי שהוצאות שהוזנו בדיעבד יופיעו במקום הנכון
-        db.all(`SELECT * FROM expenses ORDER BY date DESC, id DESC LIMIT 100`, [], (err, rows) => {
+        const sql = `SELECT * FROM expenses${where.length ? ' WHERE ' + where.join(' AND ') : ''} ORDER BY date DESC, id DESC LIMIT ${limit}`;
+        db.all(sql, params, (err, rows) => {
             if (err) reject(err);
             else resolve(rows);
         });
@@ -378,6 +399,7 @@ function getMonthSummary(month) {
 }
 
 module.exports = {
+    UNCATEGORIZED_LABEL,
     todayStr,
     currentMonthStr,
     getAvailableMonths,
