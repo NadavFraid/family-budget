@@ -1,7 +1,9 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-const dataDir = path.join(__dirname, 'data');
+const { isValidDateStr } = require('./expense-date-parser');
+// ניתן להחליף את תיקיית הנתונים במשתנה סביבה (שימושי לבדיקות ול-Docker volume).
+const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
 const dbPath = path.join(dataDir, 'budget.db');
 
 fs.mkdirSync(dataDir, { recursive: true });
@@ -19,6 +21,13 @@ function todayStr() {
 
 function currentMonthStr() {
     return todayStr().slice(0, 7); // YYYY-MM
+}
+
+// תאריך הוצאה אופציונלי: בלי תאריך נרשם היום; תאריך לא תקין נדחה ולא נשמר בשקט.
+function normalizeExpenseDate(date) {
+    if (date === undefined || date === null || date === '') return todayStr();
+    if (!isValidDateStr(date)) throw new Error(`תאריך לא תקין: ${date}`);
+    return date;
 }
 
 const db = new sqlite3.Database(dbPath);
@@ -64,9 +73,10 @@ db.serialize(() => {
     )`);
 });
 
-function addExpense(sender, category, amount, description, raw_text = '') {
+function addExpense(sender, category, amount, description, raw_text = '', expenseDate = null) {
     return new Promise((resolve, reject) => {
-        const date = todayStr();
+        let date;
+        try { date = normalizeExpenseDate(expenseDate); } catch (e) { return reject(e); }
         db.run(
             `INSERT INTO expenses (date, sender, category, amount, description, raw_text) VALUES (?, ?, ?, ?, ?, ?)`,
             [date, sender, category, amount, description, raw_text],
@@ -145,10 +155,11 @@ function setBudget(category, monthly_limit) {
     });
 }
 
-function getCategoryRemaining(category) {
+// month (YYYY-MM) אופציונלי: ברירת המחדל היא החודש הנוכחי.
+function getCategoryRemaining(category, month = currentMonthStr()) {
     return new Promise(async (resolve, reject) => {
         try {
-            const currentMonth = currentMonthStr();
+            const currentMonth = month;
             db.get(`SELECT monthly_limit FROM budgets WHERE category = ?`, [category], (err, bRow) => {
                 if (err) return reject(err);
                 const limit = bRow ? bRow.monthly_limit : 0;
@@ -221,9 +232,10 @@ function processDueRecurringExpenses() {
 }
 
 /* פונקציות לתקציב טיול */
-function addTripExpense(category, amount, description) {
+function addTripExpense(category, amount, description, expenseDate = null) {
     return new Promise((resolve, reject) => {
-        const date = todayStr();
+        let date;
+        try { date = normalizeExpenseDate(expenseDate); } catch (e) { return reject(e); }
         db.run(
             `INSERT INTO trip_expenses (date, category, amount, description) VALUES (?, ?, ?, ?)`,
             [date, category, amount, description],

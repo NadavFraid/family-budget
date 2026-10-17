@@ -1,5 +1,7 @@
 'use strict';
 
+const { extractExpenseDate, formatDisplayDate, todayInTz } = require('./expense-date-parser');
+
 const BOT_RESPONSE_MARKERS = [
     '👍',
     '✈️',
@@ -39,6 +41,7 @@ function createMessageHandler({
     deleteLastTripExpense,
     getTripSummary,
     onHomeGroupDetected = () => {},
+    getToday = todayInTz,
     logger = console
 }) {
     const processedMessages = new Map();
@@ -122,22 +125,43 @@ function createMessageHandler({
                 return;
             }
 
-            const amountMatch = firstLine.match(/(\d+(?:\.\d+)?)/);
+            // תאריך אופציונלי בהודעה ("אתמול", "לפני 3 ימים", "15/10"). הוא מוסר מהטקסט
+            // לפני קריאת הסכום, כדי ש-15/10 לא יתפרש כסכום.
+            const today = getToday();
+            const parsedDate = extractExpenseDate(firstLine, today);
+
+            if (parsedDate.error) {
+                // רק הודעה שנראית כמו הוצאה (יש בה מספר מלבד התאריך) מקבלת אזהרה;
+                // שיחה רגילה בקבוצה נשארת בשקט כמו קודם.
+                if (!/\d/.test(firstLine.replace(parsedDate.match, ' '))) {
+                    logger.log(`ℹ️ לא זוהה סכום בהודעה (${messageId || 'ללא מזהה'})`);
+                    return;
+                }
+                const reason = parsedDate.error === 'future' ? 'התאריך עדיין לא הגיע' : 'התאריך אינו תקין';
+                await client.sendMessage(chatId, `⚠️ ההוצאה לא נרשמה: ${reason} (${parsedDate.match}).\nשלחו שוב עם תאריך תקין (למשל 15/10 או "אתמול"), או בלי תאריך כדי לרשום להיום.`);
+                return;
+            }
+
+            const lineText = parsedDate.rest;
+            const expenseDate = parsedDate.date; // null = היום
+            const dateLine = expenseDate && expenseDate !== today ? `\n• תאריך: ${formatDisplayDate(expenseDate)}` : '';
+
+            const amountMatch = lineText.match(/(\d+(?:\.\d+)?)/);
             if (!amountMatch) {
                 logger.log(`ℹ️ לא זוהה סכום בהודעה (${messageId || 'ללא מזהה'})`);
                 return;
             }
 
             const amount = Number.parseFloat(amountMatch[0]);
-            const restText = firstLine.replace(amountMatch[0], '').trim();
+            const restText = lineText.replace(amountMatch[0], '').trim();
 
             if (isTripGroup) {
-                const category = autoDetectTripCategory(restText || firstLine);
+                const category = autoDetectTripCategory(restText || lineText);
                 const description = restText || 'הוצאת טיול';
 
-                await addTripExpense(category, amount, description);
+                await addTripExpense(category, amount, description, expenseDate);
                 const tripSummary = await getTripSummary();
-                let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}`;
+                let replyText = `✈️ **נרשמה הוצאה לטיול:**\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}\n• תיאור: ${description}${dateLine}`;
                 if (tripSummary.limit > 0) {
                     replyText += `\n\n📊 **מצב תקציב הטיול:**\n• תקציב יעד: ₪${tripSummary.limit.toLocaleString()}\n• סך הוצאות: ₪${tripSummary.spent.toLocaleString()}\n• נותר לטיול: ₪${tripSummary.remaining.toLocaleString()}`;
                 }
@@ -153,11 +177,16 @@ function createMessageHandler({
                 (msg.author ? msg.author.split('@')[0] : 'בן משפחה');
             category = autoDetectCategory(`${category} ${description}`, category);
 
-            await addExpense(senderName, category, amount, description, firstLine);
-            const categoryStats = await getCategoryRemaining(category);
-            let replyText = `👍 נרשם בהצלחה:\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}${description ? `\n• תיאור: ${description}` : ''}`;
+            await addExpense(senderName, category, amount, description, firstLine, expenseDate);
+            // מצב התקציב מחושב לחודש של ההוצאה, כך שהוצאה מחודש קודם לא תוצג מול החודש הנוכחי.
+            const statsMonth = (expenseDate || today).slice(0, 7);
+            const isCurrentMonth = statsMonth === today.slice(0, 7);
+            const categoryStats = await getCategoryRemaining(category, statsMonth);
+            let replyText = `👍 נרשם בהצלחה:\n• סכום: ₪${amount.toLocaleString()}\n• קטגוריה: ${category}${description ? `\n• תיאור: ${description}` : ''}${dateLine}`;
             if (categoryStats.limit > 0) {
-                replyText += `\n\n📊 מצב תקציב (${category}):\n• מסגרת: ₪${categoryStats.limit.toLocaleString()}\n• הוצא החודש: ₪${categoryStats.spent.toLocaleString()}\n• נותר בסעיף: ₪${categoryStats.remaining.toLocaleString()}`;
+                const monthLabel = isCurrentMonth ? '' : `, ${statsMonth.slice(5)}/${statsMonth.slice(0, 4)}`;
+                const spentLabel = isCurrentMonth ? 'הוצא החודש' : 'הוצא באותו חודש';
+                replyText += `\n\n📊 מצב תקציב (${category}${monthLabel}):\n• מסגרת: ₪${categoryStats.limit.toLocaleString()}\n• ${spentLabel}: ₪${categoryStats.spent.toLocaleString()}\n• נותר בסעיף: ₪${categoryStats.remaining.toLocaleString()}`;
             }
 
             const sent = await client.sendMessage(chatId, replyText);
