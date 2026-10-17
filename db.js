@@ -112,7 +112,8 @@ function deleteExpense(id) {
 
 function getExpenses() {
     return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM expenses ORDER BY id DESC LIMIT 100`, [], (err, rows) => {
+        // לפי תאריך ההוצאה (לא סדר ההקלדה), כדי שהוצאות שהוזנו בדיעבד יופיעו במקום הנכון
+        db.all(`SELECT * FROM expenses ORDER BY date DESC, id DESC LIMIT 100`, [], (err, rows) => {
             if (err) reject(err);
             else resolve(rows);
         });

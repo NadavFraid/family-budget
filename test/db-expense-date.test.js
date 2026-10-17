@@ -45,6 +45,13 @@ async function run() {
     assert.equal(byDescription('תאריך ריק').date, today);
     assert.equal(expenses.filter(e => e.description === 'מספטמבר').map(e => e.date).sort().join(','), '2026-09-03,2026-09-20');
 
+    // הרשימה ממוינת לפי תאריך ההוצאה (לא לפי סדר ההקלדה); באותו יום, האחרונה שהוקלדה ראשונה
+    assert.deepEqual(
+        expenses.map(e => `${e.date} ${e.description}`),
+        [`${today} תאריך ריק`, `${today} ללא תאריך`, '2026-09-20 מספטמבר', '2026-09-03 מספטמבר'],
+        'expenses are listed by expense date, newest first'
+    );
+
     // תאריך לא תקין נדחה ולא נשמר
     const before = (await db.getExpenses()).length;
     await assert.rejects(() => db.addExpense('בדיקה', 'סופר', 1, 'x', 'raw', '2026-02-30'), /תאריך לא תקין/);
