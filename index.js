@@ -6,14 +6,15 @@ const fs = require('fs');
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const { createMessageHandler } = require('./whatsapp-message-handler');
-const { validateNewExpense, parseExpenseListQuery } = require('./expense-input');
+const { validateNewExpense, validateExpenseUpdate, parseExpenseListQuery } = require('./expense-input');
 const {
     addExpense, deleteLastExpense, deleteExpense, getExpenses, getMonthlyStats,
     getBudgets, setBudget, getCategoryRemaining,
     addRecurringExpense, getRecurringExpenses, deleteRecurringExpense, processDueRecurringExpenses,
     addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary,
-    getAvailableMonths, getMonthSummary, currentMonthStr, todayStr
+    getAvailableMonths, getMonthSummary, currentMonthStr, todayStr, snapshotTo, dataDir, updateExpense
 } = require('./db');
+const { createDailyBackup, listBackups } = require('./backup');
 
 function removeSingletonLocks(dir) {
     if (!fs.existsSync(dir)) return;
@@ -103,37 +104,52 @@ function autoDetectTripCategory(text) {
 const BACKUP_EMAIL = process.env.BACKUP_EMAIL || 'nadav.fraid@gmail.com';
 const SMTP_USER = process.env.SMTP_USER || 'nadav.fraid@gmail.com';
 const SMTP_PASS = process.env.SMTP_PASS || '';
+const BACKUP_DIR = path.join(dataDir, 'backups');
+const BACKUP_KEEP = Math.max(1, parseInt(process.env.BACKUP_KEEP, 10) || 14);
 
-async function sendBackupEmail() {
-    console.log('📦 מתחיל תהליך שליחת גיבוי למייל...');
-    const dbPath = path.join(__dirname, 'data', 'budget.db');
-    if (!fs.existsSync(dbPath)) return { success: false, error: 'Database file not found' };
-    if (!SMTP_USER || !SMTP_PASS) return { success: false, error: 'SMTP credentials missing' };
+let lastBackupResult = null; // { ok, time, name, emailed, error } של הגיבוי האחרון (לתצוגה באתר)
 
-    try {
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user: SMTP_USER, pass: SMTP_PASS }
-        });
-
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const info = await transporter.sendMail({
-            from: `"Budget Backup" <${SMTP_USER}>`,
-            to: BACKUP_EMAIL,
-            subject: `📊 גיבוי תקציב משפחתי יומי - ${dateStr}`,
-            text: `מצורף קובץ בסיס הנתונים budget.db מעודכן להיום (${dateStr}).`,
-            attachments: [{ filename: `backup-budget-${dateStr}.db`, path: dbPath }]
-        });
-
-        console.log('✅ הגיבוי נשלח בהצלחה למייל!');
-        return { success: true, messageId: info.messageId };
-    } catch (err) {
-        console.error('❌ שגיאה בשליחת מייל הגיבוי:', err.message);
-        return { success: false, error: err.message };
-    }
+async function emailBackup(backupPath, dateStr) {
+    if (!SMTP_USER || !SMTP_PASS) return { sent: false, reason: 'SMTP_USER/SMTP_PASS לא מוגדרים' };
+    const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: SMTP_USER, pass: SMTP_PASS } });
+    await transporter.sendMail({
+        from: `"Budget Backup" <${SMTP_USER}>`,
+        to: BACKUP_EMAIL,
+        subject: `📊 גיבוי תקציב משפחתי יומי - ${dateStr}`,
+        text: `מצורף קובץ בסיס הנתונים budget.db מעודכן להיום (${dateStr}).`,
+        attachments: [{ filename: `backup-budget-${dateStr}.db`, path: backupPath }]
+    });
+    return { sent: true };
 }
 
-cron.schedule('0 1 * * *', () => sendBackupEmail(), { timezone: TZ_NAME });
+// גיבוי יומי: עותק עקבי בשרת (נשמרים BACKUP_KEEP האחרונים) + שליחה למייל אם הוגדר.
+// כשל במייל לא מבטל את הגיבוי המקומי, ולהפך.
+async function runBackup() {
+    const dateStr = todayStr();
+    const result = { ok: false, time: new Date().toISOString(), name: null, emailed: false, error: null };
+    try {
+        const backup = await createDailyBackup({ backupDir: BACKUP_DIR, dateStr, snapshot: snapshotTo, keep: BACKUP_KEEP });
+        result.ok = true;
+        result.name = backup.name;
+        console.log(`📦 גיבוי נשמר: ${backup.name} (${backup.size} bytes)`);
+        try {
+            const mail = await emailBackup(backup.path, dateStr);
+            result.emailed = mail.sent;
+            if (mail.sent) console.log('✅ הגיבוי נשלח למייל');
+            else console.log(`ℹ️ הגיבוי לא נשלח למייל: ${mail.reason}`);
+        } catch (mailErr) {
+            result.error = `שליחת המייל נכשלה: ${mailErr.message}`;
+            console.error('❌ ' + result.error);
+        }
+    } catch (err) {
+        result.error = err.message;
+        console.error('❌ שגיאה ביצירת גיבוי:', err.message);
+    }
+    lastBackupResult = result;
+    return result;
+}
+
+cron.schedule('0 1 * * *', () => runBackup(), { timezone: TZ_NAME });
 
 cron.schedule('0 8 * * *', async () => {
     try {
@@ -223,9 +239,34 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// הרצת גיבוי ידנית (שמירה בשרת + מייל אם הוגדר)
 app.get('/api/test-backup', async (req, res) => {
-    const result = await sendBackupEmail();
-    res.json(result);
+    res.json(await runBackup());
+});
+
+// מצב הגיבויים להצגה באתר
+app.get('/api/backup/status', (req, res) => {
+    const backups = listBackups(BACKUP_DIR);
+    res.json({
+        count: backups.length,
+        latest: backups[0] || null,
+        emailConfigured: Boolean(SMTP_USER && SMTP_PASS),
+        lastRun: lastBackupResult
+    });
+});
+
+// הורדת גיבוי טרי למחשב/לטלפון: עותק עקבי של המסד כרגע, שנמחק מהשרת אחרי ההורדה
+app.get('/api/backup/download', async (req, res) => {
+    const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'budget-dl-'));
+    const tmpFile = path.join(tmpDir, 'budget.db');
+    const cleanup = () => fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+        await snapshotTo(tmpFile);
+        res.download(tmpFile, `budget-${todayStr()}.db`, () => cleanup());
+    } catch (err) {
+        cleanup();
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // בלי פרמטרים: 100 ההוצאות האחרונות. ?category=...[&month=YYYY-MM]: הוצאות הקטגוריה (ברירת מחדל: החודש הנוכחי)
@@ -350,25 +391,28 @@ app.post('/api/trip/budget', async (req, res) => {
 });
 
 
+// עריכת הוצאה: סכום, קטגוריה, תאריך ותיאור. (גוף עם קטגוריה בלבד עדיין נתמך, להתאמה לאחור)
 app.put("/api/expenses/:id", async (req, res) => {
-    const id = req.params.id;
-    const category = req.body ? req.body.category : null;
-    if (!category) {
-        return res.status(400).json({ error: "קטגוריה ריקה" });
-    }
+    if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ error: "מזהה הוצאה לא תקין" });
+    const id = Number(req.params.id);
+    const body = req.body || {};
     try {
-        const dbModule = require("./db");
-        if (dbModule.updateExpenseCategory) {
-            await dbModule.updateExpenseCategory(id, category);
+        if (body.amount === undefined && body.date === undefined && body.description === undefined) {
+            const category = typeof body.category === 'string' ? body.category.trim() : '';
+            if (!category) return res.status(400).json({ error: "קטגוריה ריקה" });
+            const result = await require("./db").updateExpenseCategory(id, category);
+            if (!result.changes) return res.status(404).json({ error: "ההוצאה לא נמצאה" });
             return res.json({ success: true });
         }
-        res.status(500).json({ error: "פונקציית עדכון לא נמצאה" });
+        const input = validateExpenseUpdate(body, todayStr());
+        if (!input.ok) return res.status(400).json({ error: input.error });
+        const result = await updateExpense(id, input.value);
+        if (!result.changes) return res.status(404).json({ error: "ההוצאה לא נמצאה" });
+        res.json({ success: true, ...input.value, id });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
-
-
 
 app.delete("/api/budgets/:id", async (req, res) => {
     try {

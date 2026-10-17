@@ -59,6 +59,17 @@
         .list-header h2 { margin: 14px 0 8px; }
         .btn-secondary { background: #34495e; padding: 8px 14px; }
         .btn-secondary:hover { background: #2c3e50; }
+        .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-edit { background: #2980b9; padding: 6px 12px; font-size: 13px; }
+        .btn-edit:hover { background: #21618c; }
+        .backup-card { margin-top: 28px; padding: 14px; background: #f9f9f9; border-radius: 8px; border-right: 5px solid #16a085; }
+        .backup-card h2 { margin: 0 0 8px; font-size: 18px; }
+        .backup-card p { margin: 4px 0; font-size: 14px; }
+        .backup-warning { color: #b9770e; font-weight: bold; }
+        .backup-warning.error { color: #c0392b; }
+        .backup-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .backup-actions a, .backup-actions button { padding: 9px 14px; font-size: 14px; border-radius: 6px; text-decoration: none; color: white; background: #16a085; border: none; cursor: pointer; font-weight: bold; }
+        .backup-actions button:disabled { opacity: 0.6; cursor: wait; }
         @media (max-width: 640px) {
             body { padding: 8px; }
             .container { padding: 12px; border-radius: 10px; }
@@ -365,6 +376,16 @@
                 </tbody>
             </table>
         </div>
+
+        <div id="backup-card" class="backup-card">
+            <h2>💾 גיבוי נתונים</h2>
+            <p id="backup-status">טוען...</p>
+            <p id="backup-warning" class="backup-warning" hidden></p>
+            <div class="backup-actions">
+                <a href="/api/backup/download" id="backup-download">⬇ הורד גיבוי עכשיו</a>
+                <button type="button" id="backup-now-btn">גבה עכשיו</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -382,7 +403,8 @@
         const SELECTED_SLICE_OFFSET = 24;
         let selectedCategory = null; // null = כל ההוצאות
         let serverToday = null;      // YYYY-MM-DD לפי שעון השרת (מתמלא בטעינת הטופס)
-        let monthStatsTotal = 0;     // סך הוצאות החודש הנוכחי, כפי שהוא מופיע בעוגה
+        let monthStatsTotal = 0;
+        const expensesById = new Map(); // ההוצאות המוצגות כרגע, לחלון העריכה     // סך הוצאות החודש הנוכחי, כפי שהוא מופיע בעוגה
 
         function currentMonthLabel() {
             return serverToday ? formatMonthLabel(serverToday.slice(0, 7)) : 'החודש';
@@ -512,6 +534,8 @@
                 }
 
                 let listTotal = 0;
+                expensesById.clear();
+                expenses.forEach(ex => expensesById.set(Number(ex.id), ex));
                 tbody.innerHTML = expenses.map(ex => {
                     const cat = ex.category || UNCATEGORIZED;
                     const id = Number(ex.id);
@@ -523,7 +547,7 @@
                         <td data-label="קטגוריה"><span><b>${esc(cat)}</b> <button class="edit-cat-btn" data-id="${id}" data-cat="${esc(cat)}" style="background:none;border:none;cursor:pointer;font-size:14px;" title="ערוך קטגוריה">✏️</button></span></td>
                         <td data-label="סכום" style="color: #c0392b; font-weight:bold;">₪${amt.toLocaleString()}</td>
                         <td data-label="תיאור">${esc(ex.description || '-')}</td>
-                        <td data-label="פעולה"><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></td>
+                        <td data-label="פעולה"><div class="row-actions"><button class="btn-edit edit-exp-btn" data-id="${id}">ערוך</button><button class="btn-danger" onclick="deleteExpenseItem(${id})">מחק</button></div></td>
                     </tr>`;
                 }).join('');
 
@@ -1018,85 +1042,137 @@
             }
         }
 
-        async function editSingleExpenseCategory(id, currentCat) {
-            let existingModal = document.getElementById('dynamic-expense-modal');
-            if (existingModal) existingModal.remove();
+        // חלון עריכה מלא להוצאה: סכום, קטגוריה, תאריך ותיאור
+        function openEditExpense(id) {
+            const ex = expensesById.get(id);
+            if (!ex) return;
+            const existing = document.getElementById('dynamic-expense-modal');
+            if (existing) existing.remove();
 
             const overlay = document.createElement('div');
             overlay.id = 'dynamic-expense-modal';
-            overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 999999; display: flex; justify-content: center; align-items: center; padding: 15px; box-sizing: border-box;';
-
-            const box = document.createElement('div');
-            box.style.cssText = 'background: #ffffff; padding: 20px; border-radius: 12px; width: 100%; max-width: 300px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.4); box-sizing: border-box;';
-
-            box.innerHTML = `
-                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #333;">בחר קטגוריה חדשה להוצאה</h3>
-                <div id="dynamic-cat-list" style="max-height: 220px; overflow-y: auto; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; text-align: right;">
-                    <div style="text-align: center; color: #666; padding: 10px;">טוען קטגוריות...</div>
-                </div>
-                <button id="close-dyn-modal" style="width: 100%; padding: 10px; cursor: pointer; font-size: 15px; border-radius: 6px; border: 1px solid #ccc; background: #f0f0f0; font-weight: bold;">סגור</button>
-            `;
-
-            overlay.appendChild(box);
+            overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999999; display: flex; justify-content: center; align-items: center; padding: 15px; box-sizing: border-box;';
+            overlay.innerHTML = `
+                <form id="edit-expense-form" autocomplete="off" style="background:#fff; padding:20px; border-radius:12px; width:100%; max-width:380px; max-height:100%; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.4); display:flex; flex-direction:column; gap:10px;">
+                    <h3 style="margin:0 0 4px; font-size:17px; color:#333;">עריכת הוצאה</h3>
+                    <label style="font-size:13px;color:#555;">סכום (₪)<input type="number" id="edit-exp-amount" inputmode="decimal" step="0.01" min="0.01" required style="width:100%; font-size:16px;"></label>
+                    <label style="font-size:13px;color:#555;">קטגוריה<input type="text" id="edit-exp-category" list="category-options" maxlength="50" required style="width:100%; font-size:16px;"></label>
+                    <label style="font-size:13px;color:#555;">תאריך<input type="date" id="edit-exp-date" required style="width:100%; font-size:16px;"></label>
+                    <label style="font-size:13px;color:#555;">תיאור<input type="text" id="edit-exp-desc" maxlength="200" style="width:100%; font-size:16px;"></label>
+                    <p id="edit-exp-msg" role="alert" style="margin:0; min-height:1.2em; font-size:14px; color:#c0392b;"></p>
+                    <div style="display:flex; gap:8px;">
+                        <button type="submit" id="edit-exp-save" style="flex:1; padding:11px;">שמור</button>
+                        <button type="button" id="edit-exp-cancel" style="flex:1; padding:11px; background:#f0f0f0; color:#333; border:1px solid #ccc;">ביטול</button>
+                    </div>
+                </form>`;
             document.body.appendChild(overlay);
 
-            document.getElementById('close-dyn-modal').onclick = () => overlay.remove();
-            overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+            // הערכים נכנסים דרך value ולא דרך HTML, כדי שתווים מיוחדים בתיאור לא ישברו כלום
+            const amountInput = document.getElementById('edit-exp-amount');
+            const categoryInput = document.getElementById('edit-exp-category');
+            const dateInput = document.getElementById('edit-exp-date');
+            const descInput = document.getElementById('edit-exp-desc');
+            const msg = document.getElementById('edit-exp-msg');
+            const saveBtn = document.getElementById('edit-exp-save');
+            amountInput.value = ex.amount;
+            categoryInput.value = ex.category || '';
+            dateInput.value = ex.date || '';
+            if (serverToday) dateInput.max = serverToday;
+            descInput.value = ex.description || '';
 
+            const close = () => overlay.remove();
+            document.getElementById('edit-exp-cancel').onclick = close;
+            overlay.onclick = e => { if (e.target === overlay) close(); };
+
+            document.getElementById('edit-expense-form').addEventListener('submit', async event => {
+                event.preventDefault();
+                saveBtn.disabled = true;
+                msg.textContent = 'שומר...';
+                try {
+                    const res = await fetch('/api/expenses/' + id, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            amount: amountInput.value,
+                            category: categoryInput.value,
+                            date: dateInput.value,
+                            description: descInput.value
+                        })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.error || 'שגיאת שרת: ' + res.status);
+                    // בלי רענון דף, כדי שהסינון לפי קטגוריה לא יאבד
+                    close();
+                    loadData();
+                    refreshCategoryOptions();
+                } catch (err) {
+                    msg.textContent = err.message;
+                    saveBtn.disabled = false;
+                }
+            });
+            amountInput.focus();
+        }
+
+        // ---- גיבוי ----
+        function formatBackupTime(iso) {
+            return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' });
+        }
+
+        async function loadBackupStatus() {
+            const statusEl = document.getElementById('backup-status');
+            const warnEl = document.getElementById('backup-warning');
+            if (!statusEl || !warnEl) return;
+            const warnings = [];
+            let isError = false;
             try {
-                const res = await fetch('/api/budgets');
-                const budgets = await res.json();
-                let cats = [];
-                if (Array.isArray(budgets) && budgets.length > 0) {
-                    cats = budgets.map(b => b.category).filter(Boolean);
+                const res = await fetch('/api/backup/status');
+                if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
+                const st = await res.json();
+                if (st.latest) {
+                    statusEl.textContent = `הגיבוי האחרון: ${formatBackupTime(st.latest.modified)} · ${st.count} גיבויים שמורים בשרת`;
+                    if (Date.now() - new Date(st.latest.modified).getTime() > 36 * 3600 * 1000) {
+                        warnings.push('הגיבוי האחרון ישן מיממה וחצי. כדאי לבדוק את הלוגים של השרת.');
+                    }
+                } else {
+                    statusEl.textContent = 'עדיין אין גיבוי שמור בשרת.';
+                    warnings.push('הגיבוי היומי רץ בשעה 01:00. אפשר ללחוץ על "גבה עכשיו".');
                 }
-                if (cats.length === 0) {
-                    cats = ['מזון', 'סופר', 'דלק', 'שונות', 'בילויים', 'פארם', 'מסעדות', 'חשמל', 'ארנונה'];
+                if (!st.emailConfigured) {
+                    warnings.push('אין עותק מחוץ לשרת: הגיבוי נשמר רק על אותו שרת, ואם הוא ייפגע הגיבוי ילך איתו. הגדירו SMTP_PASS (סיסמת אפליקציה של Gmail) כדי שיישלח גם למייל, או הורידו גיבוי ידנית מדי פעם.');
                 }
-                cats = [...new Set(cats)].sort((a, b) => a.localeCompare(b, 'he'));
-
-                const listDiv = document.getElementById('dynamic-cat-list');
-                listDiv.innerHTML = '';
-
-                cats.forEach(c => {
-                    const btn = document.createElement('button');
-                    const isCurrent = (c === currentCat);
-                    btn.style.cssText = `padding: 10px 14px; width: 100%; cursor: pointer; text-align: right; background: ${isCurrent ? '#e3f2fd' : '#fdfdfd'}; border: 1px solid ${isCurrent ? '#2196f3' : '#ddd'}; border-radius: 6px; font-weight: ${isCurrent ? 'bold' : 'normal'}; font-size: 15px; color: #333;`;
-                    btn.innerText = c;
-
-                    btn.onclick = async () => {
-                        try {
-                            const updateRes = await fetch('/api/expenses/' + id, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ category: c })
-                            });
-                            if (updateRes.ok) {
-                                // בלי רענון דף, כדי שהסינון לפי קטגוריה לא יאבד
-                                overlay.remove();
-                                loadData();
-                                refreshCategoryOptions();
-                            } else {
-                                const errData = await updateRes.json().catch(() => ({}));
-                                alert('שגיאה בעדכון: ' + (errData.error || 'שגיאת שרת'));
-                            }
-                        } catch (err) {
-                            alert('שגיאת תקשורת בעדכון הקטגוריה');
-                        }
-                    };
-                    listDiv.appendChild(btn);
-                });
-            } catch (e) {
-                document.getElementById('dynamic-cat-list').innerHTML = '<div style="color: red; text-align: center;">שגיאה בטעינת קטגוריות</div>';
+                if (st.lastRun && st.lastRun.error) { warnings.push('בגיבוי האחרון הייתה תקלה: ' + st.lastRun.error); isError = true; }
+            } catch (err) {
+                statusEl.textContent = 'לא ניתן לטעון את מצב הגיבוי.';
+                warnings.push(err.message);
+                isError = true;
             }
+            warnEl.hidden = warnings.length === 0;
+            warnEl.className = 'backup-warning' + (isError ? ' error' : '');
+            warnEl.textContent = warnings.join(' ');
+        }
+
+        async function runBackupNow() {
+            const btn = document.getElementById('backup-now-btn');
+            btn.disabled = true;
+            btn.textContent = 'מגבה...';
+            try {
+                const res = await fetch('/api/test-backup');
+                const result = await res.json().catch(() => ({}));
+                if (!res.ok || !result.ok) alert('הגיבוי נכשל: ' + (result.error || 'שגיאת שרת'));
+            } catch (err) {
+                alert('שגיאת תקשורת בגיבוי');
+            }
+            btn.disabled = false;
+            btn.textContent = 'גבה עכשיו';
+            loadBackupStatus();
         }
 
         // לחיצות על כפתורי העריכה (הנתונים עוברים דרך data-attributes ולא דרך קוד מוטמע)
         document.addEventListener('click', e => {
-            const btn = e.target.closest('.edit-cat-btn, .edit-budget-btn');
+            const btn = e.target.closest('.edit-cat-btn, .edit-exp-btn, .edit-budget-btn');
             if (!btn) return;
-            if (btn.classList.contains('edit-cat-btn')) {
-                editSingleExpenseCategory(Number(btn.dataset.id), btn.dataset.cat);
+            if (btn.classList.contains('edit-cat-btn') || btn.classList.contains('edit-exp-btn')) {
+                openEditExpense(Number(btn.dataset.id));
             } else {
                 editBudgetCategory(Number(btn.dataset.id), btn.dataset.cat, Number(btn.dataset.limit));
             }
@@ -1104,6 +1180,8 @@
 
         // אתחול מדויק עם טעינת העמוד
         window.addEventListener("DOMContentLoaded", () => {
+            document.getElementById('backup-now-btn').addEventListener('click', runBackupNow);
+            loadBackupStatus();
             loadData();
             loadBudgets();
             loadRecurring();

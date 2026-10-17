@@ -60,4 +60,14 @@ function validateNewExpense(body, today = todayInTz()) {
     };
 }
 
-module.exports = { validateNewExpense, parseExpenseListQuery };
+/**
+ * בדיקת קלט לעריכת הוצאה קיימת: אותם כללים כמו הוספה, אבל התאריך חובה
+ * (עריכה בלי תאריך לא אמורה להזיז את ההוצאה להיום בשקט).
+ */
+function validateExpenseUpdate(body, today = todayInTz()) {
+    const input = body && typeof body === 'object' ? body : {};
+    if (typeof input.date !== 'string' || !input.date.trim()) return { ok: false, error: 'יש לבחור תאריך' };
+    return validateNewExpense(input, today);
+}
+
+module.exports = { validateNewExpense, validateExpenseUpdate, parseExpenseListQuery };
