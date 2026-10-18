@@ -14,6 +14,8 @@ const {
     addTripExpense, deleteLastTripExpense, getTripExpenses, deleteTripExpense, setTripBudget, getTripSummary,
     getAvailableMonths, getMonthSummary, currentMonthStr, todayStr, snapshotTo, dataDir, updateExpense
 } = require('./db');
+const { validateLoan } = require('./loan-input');
+const { getLoans, addLoan, updateLoan, adjustLoanPayment, deleteLoan } = require('./db');
 const { createDailyBackup, listBackups } = require('./backup');
 
 function removeSingletonLocks(dir) {
@@ -412,6 +414,56 @@ app.put("/api/expenses/:id", async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// ---- הלוואות ----
+const loanId = req => (/^\d+$/.test(String(req.params.id)) ? Number(req.params.id) : null);
+
+app.get('/api/loans', async (req, res) => {
+    try { res.json(await getLoans()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/loans', async (req, res) => {
+    const input = validateLoan(req.body);
+    if (!input.ok) return res.status(400).json({ error: input.error });
+    try {
+        const id = await addLoan(input.value);
+        res.status(201).json({ id, ...input.value });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/loans/:id', async (req, res) => {
+    const id = loanId(req);
+    if (id === null) return res.status(400).json({ error: 'מזהה הלוואה לא תקין' });
+    const input = validateLoan(req.body);
+    if (!input.ok) return res.status(400).json({ error: input.error });
+    try {
+        if (!(await updateLoan(id, input.value))) return res.status(404).json({ error: 'ההלוואה לא נמצאה' });
+        res.json({ id, ...input.value });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// סימון תשלום אחד כשולם (delta: 1) או ביטול סימון (delta: -1)
+app.post('/api/loans/:id/payment', async (req, res) => {
+    const id = loanId(req);
+    if (id === null) return res.status(400).json({ error: 'מזהה הלוואה לא תקין' });
+    const delta = req.body && Number(req.body.delta);
+    if (delta !== 1 && delta !== -1) return res.status(400).json({ error: 'delta חייב להיות 1 או -1' });
+    try {
+        const result = await adjustLoanPayment(id, delta);
+        if (!result.loan) return res.status(404).json({ error: 'ההלוואה לא נמצאה' });
+        if (!result.changed) return res.status(409).json({ error: delta === 1 ? 'כל התשלומים כבר סומנו כשולמו' : 'אין תשלום לבטל' , loan: result.loan });
+        res.json(result.loan);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/loans/:id', async (req, res) => {
+    const id = loanId(req);
+    if (id === null) return res.status(400).json({ error: 'מזהה הלוואה לא תקין' });
+    try {
+        if (!(await deleteLoan(id))) return res.status(404).json({ error: 'ההלוואה לא נמצאה' });
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete("/api/budgets/:id", async (req, res) => {

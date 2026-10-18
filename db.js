@@ -67,6 +67,18 @@ db.serialize(() => {
         description TEXT
     )`);
 
+    db.run(`CREATE TABLE IF NOT EXISTS loans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lender TEXT NOT NULL,
+        principal REAL NOT NULL,
+        start_date TEXT,
+        total_payments INTEGER NOT NULL,
+        paid_payments INTEGER NOT NULL DEFAULT 0,
+        monthly_payment REAL,
+        notes TEXT DEFAULT '',
+        created_at TEXT
+    )`);
+
     db.run(`CREATE TABLE IF NOT EXISTS trip_settings (
         key TEXT PRIMARY KEY,
         value REAL
@@ -421,7 +433,75 @@ function getMonthSummary(month) {
     });
 }
 
+// ---- הלוואות ----
+const LOAN_COLUMNS = 'id, lender, principal, start_date, total_payments, paid_payments, monthly_payment, notes';
+
+// הלוואות פעילות קודם (הכי חדשה למעלה), ואחריהן הלוואות שנסגרו
+function getLoans() {
+    return new Promise((resolve, reject) => {
+        db.all(
+            `SELECT ${LOAN_COLUMNS} FROM loans
+             ORDER BY (paid_payments >= total_payments) ASC, COALESCE(start_date, created_at) DESC, id DESC`,
+            [],
+            (err, rows) => (err ? reject(err) : resolve(rows || []))
+        );
+    });
+}
+
+function addLoan(loan) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `INSERT INTO loans (lender, principal, start_date, total_payments, paid_payments, monthly_payment, notes, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [loan.lender, loan.principal, loan.start_date, loan.total_payments, loan.paid_payments, loan.monthly_payment, loan.notes, todayStr()],
+            function(err) { return err ? reject(err) : resolve(this.lastID); }
+        );
+    });
+}
+
+function updateLoan(id, loan) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `UPDATE loans SET lender = ?, principal = ?, start_date = ?, total_payments = ?, paid_payments = ?, monthly_payment = ?, notes = ?
+             WHERE id = ?`,
+            [loan.lender, loan.principal, loan.start_date, loan.total_payments, loan.paid_payments, loan.monthly_payment, loan.notes, id],
+            function(err) { return err ? reject(err) : resolve(this.changes > 0); }
+        );
+    });
+}
+
+// מוסיף (delta=1) או מבטל (delta=-1) תשלום אחד; הגבולות 0..total נאכפים בתוך ה-UPDATE עצמו
+// (לחיצה כפולה או שני מכשירים באותו רגע לא יכולים לעבור את הסך הכולל). מחזיר את ההלוואה המעודכנת או null.
+function adjustLoanPayment(id, delta) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `UPDATE loans SET paid_payments = paid_payments + ?
+             WHERE id = ? AND paid_payments + ? >= 0 AND paid_payments + ? <= total_payments`,
+            [delta, id, delta, delta],
+            function(err) {
+                if (err) return reject(err);
+                const changed = this.changes > 0; // `this` ב-callback הפנימי הוא כבר לא ה-UPDATE
+                db.get(`SELECT ${LOAN_COLUMNS} FROM loans WHERE id = ?`, [id], (err2, row) => {
+                    if (err2) return reject(err2);
+                    resolve({ loan: row || null, changed });
+                });
+            }
+        );
+    });
+}
+
+function deleteLoan(id) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM loans WHERE id = ?`, [id], function(err) { return err ? reject(err) : resolve(this.changes > 0); });
+    });
+}
+
 module.exports = {
+    getLoans,
+    addLoan,
+    updateLoan,
+    adjustLoanPayment,
+    deleteLoan,
     UNCATEGORIZED_LABEL,
     snapshotTo,
     dataDir,
