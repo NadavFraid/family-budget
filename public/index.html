@@ -59,6 +59,32 @@
         .list-header h2 { margin: 14px 0 8px; }
         .btn-secondary { background: #34495e; padding: 8px 14px; }
         .btn-secondary:hover { background: #2c3e50; }
+        #loans-summary .card { min-width: 140px; }
+        .loan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .loan-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #555; min-width: 0; }
+        .loan-grid input, .loan-grid textarea { width: 100%; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: inherit; }
+        .loan-grid .wide { grid-column: 1 / -1; }
+        .loan-grid textarea { resize: vertical; min-height: 64px; }
+        .loan-form { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .loan-form .form-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+        .loan-form .form-message { margin: 0; font-size: 14px; min-height: 1.2em; }
+        .loan-form .form-message.ok { color: #1e8449; }
+        .loan-form .form-message.error { color: #c0392b; }
+        .loan-card { background: #fff; border: 1px solid #e3e6ea; border-right: 5px solid #e67e22; border-radius: 10px; padding: 14px; margin-bottom: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.04); }
+        .loan-card.done { border-right-color: #27ae60; background: #fafdfb; }
+        .loan-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+        .loan-lender { font-size: 18px; font-weight: bold; color: #2c3e50; overflow-wrap: anywhere; }
+        .loan-principal { font-size: 18px; font-weight: bold; color: #c0392b; }
+        .loan-progress { height: 12px; background: #ecf0f1; border-radius: 6px; overflow: hidden; margin: 10px 0 4px; }
+        .loan-progress > span { display: block; height: 100%; background: #e67e22; border-radius: 6px; }
+        .loan-card.done .loan-progress > span { background: #27ae60; }
+        .loan-count { font-size: 14px; color: #34495e; font-weight: bold; }
+        .loan-meta { font-size: 13px; color: #7f8c8d; margin-top: 6px; display: flex; gap: 6px 16px; flex-wrap: wrap; }
+        .loan-notes { font-size: 14px; color: #555; margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f8f9fa; padding: 8px 10px; border-radius: 6px; }
+        .loan-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+        .loan-actions button { padding: 8px 12px; font-size: 14px; }
+        .btn-pay { background: #27ae60; }
+        .loans-note { font-size: 12px; color: #95a5a6; margin: -6px 0 12px; }
         .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
         .btn-edit { background: #2980b9; padding: 6px 12px; font-size: 13px; }
         .btn-edit:hover { background: #21618c; }
@@ -71,6 +97,7 @@
         .backup-actions a, .backup-actions button { padding: 9px 14px; font-size: 14px; border-radius: 6px; text-decoration: none; color: white; background: #16a085; border: none; cursor: pointer; font-weight: bold; }
         .backup-actions button:disabled { opacity: 0.6; cursor: wait; }
         @media (max-width: 640px) {
+            .loan-grid { grid-template-columns: 1fr; }
             body { padding: 8px; }
             .container { padding: 12px; border-radius: 10px; }
             h1 { font-size: 23px; margin: 10px 0 16px; }
@@ -164,6 +191,7 @@
             <button class="tab-btn active" onclick="switchTab('expenses')">הוצאות אחרונות</button>
             <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
             <button class="tab-btn" onclick="switchTab('monthly')">📅 סיכום חודשי</button>
+            <button class="tab-btn" onclick="switchTab('loans')">🏦 הלוואות</button>
             <button class="tab-btn trip-btn" onclick="switchTab('trip')">✈️ תקציב טיול</button>
         </div>
 
@@ -324,6 +352,23 @@
                     <tr><td colspan="5" style="text-align:center;">טוען נתונים...</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        <div id="loans-tab" class="tab-content">
+            <div class="summary-cards" id="loans-summary"></div>
+            <p id="loans-summary-note" class="loans-note" hidden></p>
+
+            <h2>הוספת הלוואה</h2>
+            <form id="loan-form" class="loan-form" autocomplete="off">
+                <div class="loan-grid" id="loan-form-fields"></div>
+                <div class="form-actions">
+                    <button type="submit" id="loan-submit">הוסף הלוואה</button>
+                    <p id="loan-msg" class="form-message" role="status" aria-live="polite"></p>
+                </div>
+            </form>
+
+            <h2>ההלוואות שלנו</h2>
+            <div id="loans-list"><p style="text-align:center;color:#7f8c8d;">טוען...</p></div>
         </div>
 
         <div id="trip-tab" class="tab-content">
@@ -505,6 +550,10 @@
                 document.querySelector('button[onclick="switchTab(\'recurring\')"]').classList.add('active');
                 document.getElementById('recurring-tab').classList.add('active');
                 loadRecurring();
+            } else if (tabName === 'loans') {
+                document.querySelector('button[onclick="switchTab(\'loans\')"]').classList.add('active');
+                document.getElementById('loans-tab').classList.add('active');
+                loadLoans();
             } else if (tabName === 'trip') {
                 document.querySelector('.tab-btn.trip-btn').classList.add('active');
                 document.getElementById('trip-tab').classList.add('active');
@@ -1113,6 +1162,239 @@
             amountInput.focus();
         }
 
+        // ---- הלוואות ----
+        const loansById = new Map();
+
+        function money(n) {
+            return '₪' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString();
+        }
+
+        // שדות הטופס (משמשים גם את טופס ההוספה וגם את חלון העריכה; ה-prefix מבדיל בין ה-ids)
+        function loanFieldsHtml(prefix) {
+            return `
+                <label>ממי נלקחה ההלוואה<input type="text" id="${prefix}-lender" maxlength="100" placeholder="למשל: בנק, הורים" required></label>
+                <label>סכום שנלקח (₪)<input type="number" id="${prefix}-principal" inputmode="decimal" step="0.01" min="0.01" required></label>
+                <label>סך כל התשלומים<input type="number" id="${prefix}-total" inputmode="numeric" step="1" min="1" max="600" required></label>
+                <label>כמה תשלומים כבר שולמו<input type="number" id="${prefix}-paid" inputmode="numeric" step="1" min="0" value="0"></label>
+                <label>תשלום חודשי (₪, לא חובה)<input type="number" id="${prefix}-monthly" inputmode="decimal" step="0.01" min="0.01"></label>
+                <label>תאריך לקיחת ההלוואה (לא חובה)<input type="date" id="${prefix}-start"></label>
+                <label class="wide">הערות<textarea id="${prefix}-notes" maxlength="500" rows="2" placeholder="ריבית, תנאים, מועד החזר..."></textarea></label>`;
+        }
+
+        function readLoanFields(prefix) {
+            const val = id => document.getElementById(`${prefix}-${id}`).value;
+            return {
+                lender: val('lender'),
+                principal: val('principal'),
+                total_payments: val('total'),
+                paid_payments: val('paid'),
+                monthly_payment: val('monthly'),
+                start_date: val('start'),
+                notes: val('notes')
+            };
+        }
+
+        function fillLoanFields(prefix, loan) {
+            const set = (id, v) => { document.getElementById(`${prefix}-${id}`).value = v ?? ''; };
+            set('lender', loan.lender);
+            set('principal', loan.principal);
+            set('total', loan.total_payments);
+            set('paid', loan.paid_payments);
+            set('monthly', loan.monthly_payment);
+            set('start', loan.start_date);
+            set('notes', loan.notes);
+        }
+
+        function renderLoanSummary(loans) {
+            const box = document.getElementById('loans-summary');
+            const note = document.getElementById('loans-summary-note');
+            const active = loans.filter(l => l.paid_payments < l.total_payments);
+            const remainingPayments = active.reduce((sum, l) => sum + (l.total_payments - l.paid_payments), 0);
+            const withMonthly = active.filter(l => l.monthly_payment);
+            const remainingAmount = withMonthly.reduce((sum, l) => sum + l.monthly_payment * (l.total_payments - l.paid_payments), 0);
+            const monthlyTotal = withMonthly.reduce((sum, l) => sum + l.monthly_payment, 0);
+            box.innerHTML = `
+                <div class="card"><h3>הלוואות פעילות</h3><div class="value">${active.length}</div></div>
+                <div class="card"><h3>תשלומים שנותרו</h3><div class="value">${remainingPayments}</div></div>
+                <div class="card spent"><h3>נותר לשלם</h3><div class="value">${money(remainingAmount)}</div></div>
+                <div class="card remaining"><h3>תשלום חודשי כולל</h3><div class="value">${money(monthlyTotal)}</div></div>`;
+            const missing = active.length - withMonthly.length;
+            note.hidden = missing === 0;
+            note.textContent = missing ? `הסכומים של "נותר לשלם" ו"תשלום חודשי כולל" לא כוללים ${missing} הלוואות פעילות שלא הוזן להן תשלום חודשי.` : '';
+        }
+
+        function loanCardHtml(l) {
+            const id = Number(l.id);
+            const remaining = l.total_payments - l.paid_payments;
+            const done = remaining <= 0;
+            const pct = Math.min(100, Math.round((l.paid_payments / l.total_payments) * 100));
+            const meta = [];
+            if (l.monthly_payment) meta.push(`תשלום חודשי: ${money(l.monthly_payment)}`);
+            if (l.monthly_payment && !done) meta.push(`נותר לשלם: ${money(l.monthly_payment * remaining)}`);
+            if (l.start_date) meta.push(`נלקחה ב-${esc(formatDisplayDate(l.start_date))}`);
+            return `<div class="loan-card${done ? ' done' : ''}">
+                <div class="loan-head">
+                    <span class="loan-lender">${esc(l.lender)}${done ? ' · ✅ נסגרה' : ''}</span>
+                    <span class="loan-principal">${money(l.principal)}</span>
+                </div>
+                <div class="loan-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${l.total_payments}" aria-valuenow="${l.paid_payments}"><span style="width:${pct}%"></span></div>
+                <div class="loan-count">שולמו ${l.paid_payments} מתוך ${l.total_payments} תשלומים${done ? '' : ` (נותרו ${remaining})`}</div>
+                ${meta.length ? `<div class="loan-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
+                ${l.notes ? `<div class="loan-notes">${esc(l.notes)}</div>` : ''}
+                <div class="loan-actions">
+                    ${done ? '' : `<button type="button" class="btn-pay" data-loan-action="pay" data-id="${id}">✓ שולם תשלום</button>`}
+                    ${l.paid_payments > 0 ? `<button type="button" class="btn-secondary" data-loan-action="undo" data-id="${id}">↶ בטל תשלום</button>` : ''}
+                    <button type="button" class="btn-edit" data-loan-action="edit" data-id="${id}">ערוך</button>
+                    <button type="button" class="btn-danger" data-loan-action="delete" data-id="${id}">מחק</button>
+                </div>
+            </div>`;
+        }
+
+        async function loadLoans() {
+            const list = document.getElementById('loans-list');
+            if (!list) return;
+            try {
+                const res = await fetch('/api/loans');
+                if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
+                const loans = await res.json();
+                loansById.clear();
+                loans.forEach(l => loansById.set(Number(l.id), l));
+                renderLoanSummary(loans);
+                list.innerHTML = loans.length
+                    ? loans.map(loanCardHtml).join('')
+                    : '<p style="text-align:center;color:#7f8c8d;">עדיין לא נוספו הלוואות</p>';
+            } catch (err) {
+                console.error('Loans error:', err);
+                list.innerHTML = `<p style="color:red;text-align:center;">תקלה בטעינת ההלוואות: ${esc(err.message)}</p>`;
+            }
+        }
+
+        function showLoanMessage(text, kind) {
+            const el = document.getElementById('loan-msg');
+            el.textContent = text;
+            el.className = 'form-message' + (kind ? ' ' + kind : '');
+        }
+
+        async function submitNewLoan(event) {
+            event.preventDefault();
+            const btn = document.getElementById('loan-submit');
+            btn.disabled = true;
+            showLoanMessage('שומר...', '');
+            try {
+                const res = await fetch('/api/loans', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(readLoanFields('loan-new'))
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'שגיאת שרת: ' + res.status);
+                document.getElementById('loan-form').reset();
+                showLoanMessage(`נוספה הלוואה מ-${data.lender}: ${money(data.principal)}`, 'ok');
+                loadLoans();
+            } catch (err) {
+                showLoanMessage(err.message, 'error');
+            }
+            btn.disabled = false;
+        }
+
+        async function changeLoanPayment(id, delta) {
+            try {
+                const res = await fetch(`/api/loans/${id}/payment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ delta })
+                });
+                if (!res.ok && res.status !== 409) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('שגיאה: ' + (data.error || 'שגיאת שרת'));
+                }
+            } catch (err) {
+                alert('שגיאת תקשורת');
+            }
+            loadLoans();
+        }
+
+        async function deleteLoanItem(id) {
+            const loan = loansById.get(id);
+            if (!confirm(`למחוק את ההלוואה${loan ? ' מ-' + loan.lender : ''}? אי אפשר לשחזר.`)) return;
+            try {
+                const res = await fetch(`/api/loans/${id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('שגיאה במחיקה: ' + (data.error || 'שגיאת שרת'));
+                }
+            } catch (err) {
+                alert('שגיאת תקשורת');
+            }
+            loadLoans();
+        }
+
+        function openEditLoan(id) {
+            const loan = loansById.get(id);
+            if (!loan) return;
+            const existing = document.getElementById('loan-edit-modal');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'loan-edit-modal';
+            overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999999; display: flex; justify-content: center; align-items: center; padding: 12px; box-sizing: border-box;';
+            overlay.innerHTML = `
+                <form id="loan-edit-form" autocomplete="off" style="background:#fff; padding:18px; border-radius:12px; width:100%; max-width:480px; max-height:100%; overflow-y:auto; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+                    <h3 style="margin:0 0 12px; font-size:17px; color:#333;">עריכת הלוואה</h3>
+                    <div class="loan-grid">${loanFieldsHtml('loan-edit')}</div>
+                    <p id="loan-edit-msg" role="alert" style="margin:10px 0 0; min-height:1.2em; font-size:14px; color:#c0392b;"></p>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <button type="submit" id="loan-edit-save" style="flex:1; padding:11px;">שמור</button>
+                        <button type="button" id="loan-edit-cancel" style="flex:1; padding:11px; background:#f0f0f0; color:#333; border:1px solid #ccc;">ביטול</button>
+                    </div>
+                </form>`;
+            document.body.appendChild(overlay);
+            fillLoanFields('loan-edit', loan);
+
+            const close = () => overlay.remove();
+            document.getElementById('loan-edit-cancel').onclick = close;
+            overlay.onclick = e => { if (e.target === overlay) close(); };
+            document.getElementById('loan-edit-form').addEventListener('submit', async event => {
+                event.preventDefault();
+                const saveBtn = document.getElementById('loan-edit-save');
+                const msg = document.getElementById('loan-edit-msg');
+                saveBtn.disabled = true;
+                msg.textContent = 'שומר...';
+                try {
+                    const res = await fetch('/api/loans/' + id, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(readLoanFields('loan-edit'))
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.error || 'שגיאת שרת: ' + res.status);
+                    close();
+                    loadLoans();
+                } catch (err) {
+                    msg.textContent = err.message;
+                    saveBtn.disabled = false;
+                }
+            });
+            document.getElementById('loan-edit-lender').focus();
+        }
+
+        function initLoansTab() {
+            const fields = document.getElementById('loan-form-fields');
+            if (!fields) return;
+            fields.innerHTML = loanFieldsHtml('loan-new');
+            document.getElementById('loan-form').addEventListener('submit', submitNewLoan);
+            document.getElementById('loans-list').addEventListener('click', e => {
+                const btn = e.target.closest('[data-loan-action]');
+                if (!btn) return;
+                const id = Number(btn.dataset.id);
+                const action = btn.dataset.loanAction;
+                if (action === 'pay') changeLoanPayment(id, 1);
+                else if (action === 'undo') changeLoanPayment(id, -1);
+                else if (action === 'edit') openEditLoan(id);
+                else if (action === 'delete') deleteLoanItem(id);
+            });
+        }
+
         // ---- גיבוי ----
         function formatBackupTime(iso) {
             return new Date(iso).toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'short', timeStyle: 'short' });
@@ -1180,6 +1462,7 @@
 
         // אתחול מדויק עם טעינת העמוד
         window.addEventListener("DOMContentLoaded", () => {
+            initLoansTab();
             document.getElementById('backup-now-btn').addEventListener('click', runBackupNow);
             loadBackupStatus();
             loadData();
