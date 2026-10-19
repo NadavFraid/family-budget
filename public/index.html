@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="תקציב">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.js"></script>
     <style>
         * { box-sizing: border-box; }
         html, body { max-width: 100%; overflow-x: hidden; }
@@ -1485,7 +1485,7 @@
             const stats = [];
             stats.push(`<div class="card"><h3>החזר חודשי בהתחלה</h3><div class="value">${money(sum.currentMonthly)}</div></div>`);
             if (sum.nextDrop && sum.nextDrop.amount > 0) {
-                stats.push(`<div class="card remaining"><h3>ההחזר החודשי יורד ב-</h3><div class="value">${money(sum.nextDrop.from - sum.nextDrop.amount)}</div><small>בחודש ${esc(shortMonth(sum.nextDrop.month))}, ל-${money(sum.nextDrop.amount)}</small></div>`);
+                stats.push(`<div class="card remaining"><h3>הירידה הבאה בהחזר החודשי</h3><div class="value">${money(sum.nextDrop.from - sum.nextDrop.amount)}</div><small>בחודש ${esc(shortMonth(sum.nextDrop.month))} ההחזר יהיה ${money(sum.nextDrop.amount)}</small></div>`);
             }
             stats.push(`<div class="card remaining"><h3>סיום כל ההלוואות</h3><div class="value">${esc(formatMonthLabel(sum.lastPaymentMonth))}</div><small>עוד ${sum.monthsLeft} חודשים</small></div>`);
             stats.push(`<div class="card spent"><h3>נותר לשלם בסך הכול</h3><div class="value">${money(sum.remainingTotal)}</div>${sum.estimatedCount ? '<small>כולל הערכה</small>' : ''}</div>`);
@@ -1507,7 +1507,14 @@
                 return `<tr><td>${esc(range)}</td><td>${money(step.amount)}</td></tr>`;
             }).join('') + `<tr><td>מ-${esc(shortMonth(fc.months[fc.months.length - 1]))}</td><td>${money(0)}</td></tr>`;
 
-            if (!window.Chart) return;
+            const chartBox = document.querySelector('.forecast-chart');
+            chartBox.hidden = !window.Chart;
+            if (!window.Chart) {
+                // בלי הודעה כאן הגרף פשוט נעלם בלי שאף אחד יבין למה (ספריית הגרפים נטענת מהאינטרנט)
+                document.getElementById('forecast-note').textContent = 'הגרף לא נטען: ספריית הגרפים לא הגיעה (בדקו חיבור לאינטרנט ורעננו). הטבלה למטה זמינה.';
+                document.querySelector('#forecast-card details').open = true;
+                return;
+            }
             forecastChart = new Chart(document.getElementById('loansForecastChart'), {
                 type: 'bar',
                 data: {
