@@ -15,6 +15,7 @@ const {
     getAvailableMonths, getMonthSummary, currentMonthStr, todayStr, snapshotTo, dataDir, updateExpense
 } = require('./db');
 const { validateLoan } = require('./loan-input');
+const { buildLoanForecast } = require('./loan-schedule');
 const { getLoans, addLoan, updateLoan, adjustLoanPayment, deleteLoan } = require('./db');
 const { createDailyBackup, listBackups } = require('./backup');
 
@@ -421,6 +422,15 @@ const loanId = req => (/^\d+$/.test(String(req.params.id)) ? Number(req.params.i
 
 app.get('/api/loans', async (req, res) => {
     try { res.json(await getLoans()); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// צפי החזר: ?start=0 (ברירת מחדל, התשלום הבא החודש) או ?start=1 (התשלום הבא בחודש הבא)
+app.get('/api/loans/forecast', async (req, res) => {
+    const start = req.query.start === undefined ? '0' : String(req.query.start);
+    if (start !== '0' && start !== '1') return res.status(400).json({ error: 'start חייב להיות 0 או 1' });
+    try {
+        res.json(buildLoanForecast(await getLoans(), { currentMonth: currentMonthStr(), startOffset: Number(start) }));
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/loans', async (req, res) => {
