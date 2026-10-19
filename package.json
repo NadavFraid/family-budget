@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test/expense-date-parser.test.js && node test/expense-input.test.js && node test/whatsapp-message-handler.test.js && node test/db-expense-date.test.js && node test/loan-input.test.js && node test/db-loans.test.js"
+    "test": "node test/expense-date-parser.test.js && node test/expense-input.test.js && node test/whatsapp-message-handler.test.js && node test/db-expense-date.test.js && node test/loan-input.test.js && node test/loan-schedule.test.js && node test/db-loans.test.js"
   },
   "dependencies": {
     "express": "^4.18.2",

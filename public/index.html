@@ -59,7 +59,18 @@
         .list-header h2 { margin: 14px 0 8px; }
         .btn-secondary { background: #34495e; padding: 8px 14px; }
         .btn-secondary:hover { background: #2c3e50; }
-        #loans-summary .card { min-width: 140px; }
+        #loans-summary .card, #forecast-stats .card { min-width: 140px; }
+        .card small { display: block; margin-top: 4px; font-size: 12px; color: #7f8c8d; font-weight: normal; }
+        .forecast-card { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 14px; margin: 6px 0 22px; }
+        .forecast-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .forecast-head h2 { margin: 0; }
+        .forecast-opt { font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; }
+        .forecast-opt select { padding: 6px 8px; font-size: 14px; }
+        .forecast-cheer { font-weight: bold; color: #1e8449; margin: 10px 0 4px; }
+        .forecast-chart { position: relative; height: 280px; margin-top: 10px; }
+        .forecast-card details { margin-top: 8px; font-size: 14px; }
+        .forecast-card summary { cursor: pointer; color: #2980b9; font-weight: bold; }
+        .forecast-card details table { margin-top: 8px; }
         .loan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         .loan-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #555; min-width: 0; }
         .loan-grid input, .loan-grid textarea { width: 100%; font-size: 16px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: inherit; }
@@ -356,7 +367,29 @@
 
         <div id="loans-tab" class="tab-content">
             <div class="summary-cards" id="loans-summary"></div>
-            <p id="loans-summary-note" class="loans-note" hidden></p>
+
+            <div id="forecast-card" class="forecast-card" hidden>
+                <div class="forecast-head">
+                    <h2>צפי החזר ההלוואות</h2>
+                    <label class="forecast-opt">התשלום הבא:
+                        <select id="forecast-start" aria-label="מתי יורד התשלום הבא">
+                            <option value="0">החודש</option>
+                            <option value="1">החודש הבא</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="summary-cards" id="forecast-stats"></div>
+                <p id="forecast-cheer" class="forecast-cheer" hidden></p>
+                <div class="forecast-chart"><canvas id="loansForecastChart" role="img" aria-label="גרף עמודות של ההחזר החודשי הצפוי של ההלוואות לאורך הזמן"></canvas></div>
+                <p id="forecast-note" class="loans-note"></p>
+                <details>
+                    <summary>הצג כטבלה</summary>
+                    <table>
+                        <thead><tr><th>תקופה</th><th>החזר חודשי</th></tr></thead>
+                        <tbody id="forecast-table"></tbody>
+                    </table>
+                </details>
+            </div>
 
             <h2>הוספת הלוואה</h2>
             <form id="loan-form" class="loan-form" autocomplete="off">
@@ -1205,22 +1238,13 @@
             set('notes', loan.notes);
         }
 
+        // סיכום קצר בראש הטאב. הסכומים בשקלים נמצאים בכרטיס הצפי, שמחשב אותם במקום אחד (כולל הערכה להלוואות בלי תשלום חודשי)
         function renderLoanSummary(loans) {
-            const box = document.getElementById('loans-summary');
-            const note = document.getElementById('loans-summary-note');
             const active = loans.filter(l => l.paid_payments < l.total_payments);
             const remainingPayments = active.reduce((sum, l) => sum + (l.total_payments - l.paid_payments), 0);
-            const withMonthly = active.filter(l => l.monthly_payment);
-            const remainingAmount = withMonthly.reduce((sum, l) => sum + l.monthly_payment * (l.total_payments - l.paid_payments), 0);
-            const monthlyTotal = withMonthly.reduce((sum, l) => sum + l.monthly_payment, 0);
-            box.innerHTML = `
+            document.getElementById('loans-summary').innerHTML = `
                 <div class="card"><h3>הלוואות פעילות</h3><div class="value">${active.length}</div></div>
-                <div class="card"><h3>תשלומים שנותרו</h3><div class="value">${remainingPayments}</div></div>
-                <div class="card spent"><h3>נותר לשלם</h3><div class="value">${money(remainingAmount)}</div></div>
-                <div class="card remaining"><h3>תשלום חודשי כולל</h3><div class="value">${money(monthlyTotal)}</div></div>`;
-            const missing = active.length - withMonthly.length;
-            note.hidden = missing === 0;
-            note.textContent = missing ? `הסכומים של "נותר לשלם" ו"תשלום חודשי כולל" לא כוללים ${missing} הלוואות פעילות שלא הוזן להן תשלום חודשי.` : '';
+                <div class="card"><h3>תשלומים שנותרו</h3><div class="value">${remainingPayments}</div></div>`;
         }
 
         function loanCardHtml(l) {
@@ -1232,6 +1256,7 @@
             if (l.monthly_payment) meta.push(`תשלום חודשי: ${money(l.monthly_payment)}`);
             if (l.monthly_payment && !done) meta.push(`נותר לשלם: ${money(l.monthly_payment * remaining)}`);
             if (l.start_date) meta.push(`נלקחה ב-${esc(formatDisplayDate(l.start_date))}`);
+            if (!done && loanEndMonth.has(id)) meta.push(`צפי סיום: ${esc(formatMonthLabel(loanEndMonth.get(id)))}`);
             return `<div class="loan-card${done ? ' done' : ''}">
                 <div class="loan-head">
                     <span class="loan-lender">${esc(l.lender)}${done ? ' · ✅ נסגרה' : ''}</span>
@@ -1254,15 +1279,18 @@
             const list = document.getElementById('loans-list');
             if (!list) return;
             try {
-                const res = await fetch('/api/loans');
+                const [res, forecast] = await Promise.all([fetch('/api/loans'), fetchForecast()]);
                 if (!res.ok) throw new Error('שגיאת שרת: ' + res.status);
                 const loans = await res.json();
                 loansById.clear();
                 loans.forEach(l => loansById.set(Number(l.id), l));
+                loanEndMonth.clear();
+                if (forecast) forecast.loans.forEach(l => loanEndMonth.set(Number(l.id), l.endMonth));
                 renderLoanSummary(loans);
                 list.innerHTML = loans.length
                     ? loans.map(loanCardHtml).join('')
                     : '<p style="text-align:center;color:#7f8c8d;">עדיין לא נוספו הלוואות</p>';
+                renderForecast(forecast);
             } catch (err) {
                 console.error('Loans error:', err);
                 list.innerHTML = `<p style="color:red;text-align:center;">תקלה בטעינת ההלוואות: ${esc(err.message)}</p>`;
@@ -1382,6 +1410,12 @@
             const fields = document.getElementById('loan-form-fields');
             if (!fields) return;
             fields.innerHTML = loanFieldsHtml('loan-new');
+            const startSelect = document.getElementById('forecast-start');
+            startSelect.value = getForecastStart();
+            startSelect.addEventListener('change', () => {
+                try { localStorage.setItem('loansForecastStart', startSelect.value); } catch (e) { /* לא קריטי */ }
+                loadLoans();
+            });
             document.getElementById('loan-form').addEventListener('submit', submitNewLoan);
             document.getElementById('loans-list').addEventListener('click', e => {
                 const btn = e.target.closest('[data-loan-action]');
@@ -1392,6 +1426,130 @@
                 else if (action === 'undo') changeLoanPayment(id, -1);
                 else if (action === 'edit') openEditLoan(id);
                 else if (action === 'delete') deleteLoanItem(id);
+            });
+        }
+
+        // ---- צפי החזר הלוואות ----
+        // צבעים קבועים לפי סדר ההלוואה (לפי מספר מזהה), לא לפי גודל: הצבע נשאר של אותה הלוואה.
+        // יותר מ-8 הלוואות: מהשמינית והלאה מתאחדות לעמודה אפורה אחת.
+        const LOAN_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+        const LOAN_OTHER_COLOR = '#9c9b96';
+        let forecastChart = null;
+        const loanEndMonth = new Map();
+
+        function shortMonth(ym) {
+            const [y, m] = ym.split('-').map(Number);
+            return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('he-IL', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+        }
+
+        function getForecastStart() {
+            try { return localStorage.getItem('loansForecastStart') === '1' ? '1' : '0'; } catch (e) { return '0'; }
+        }
+
+        async function fetchForecast() {
+            try {
+                const res = await fetch('/api/loans/forecast?start=' + getForecastStart());
+                return res.ok ? await res.json() : null;
+            } catch (e) {
+                console.error('Forecast error:', e);
+                return null;
+            }
+        }
+
+        // מאחד את הסדרות לפי חריצי הצבע: עד 8 הלוואות כל אחת לעצמה, העודפות לסדרה אפורה אחת
+        function forecastSeries(fc) {
+            const allIds = [...loansById.keys()].sort((a, b) => a - b);
+            const fold = allIds.length > LOAN_COLORS.length;
+            const series = [];
+            let other = null;
+            for (const loan of fc.loans) {
+                const slot = allIds.indexOf(Number(loan.id));
+                if (fold && slot >= LOAN_COLORS.length - 1) {
+                    if (!other) other = { slot: 99, label: 'הלוואות נוספות', color: LOAN_OTHER_COLOR, data: fc.months.map(() => 0) };
+                    loan.amounts.forEach((a, i) => { other.data[i] = Math.round((other.data[i] + a) * 100) / 100; });
+                } else {
+                    series.push({ slot, label: loan.lender, color: LOAN_COLORS[slot % LOAN_COLORS.length], data: loan.amounts });
+                }
+            }
+            if (other) series.push(other);
+            return series.sort((a, b) => a.slot - b.slot);
+        }
+
+        function renderForecast(fc) {
+            const card = document.getElementById('forecast-card');
+            if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
+            if (!fc || !fc.summary) { card.hidden = true; return; }
+            card.hidden = false;
+            const sum = fc.summary;
+
+            const stats = [];
+            stats.push(`<div class="card"><h3>החזר חודשי בהתחלה</h3><div class="value">${money(sum.currentMonthly)}</div></div>`);
+            if (sum.nextDrop && sum.nextDrop.amount > 0) {
+                stats.push(`<div class="card remaining"><h3>ההחזר החודשי יורד ב-</h3><div class="value">${money(sum.nextDrop.from - sum.nextDrop.amount)}</div><small>בחודש ${esc(shortMonth(sum.nextDrop.month))}, ל-${money(sum.nextDrop.amount)}</small></div>`);
+            }
+            stats.push(`<div class="card remaining"><h3>סיום כל ההלוואות</h3><div class="value">${esc(formatMonthLabel(sum.lastPaymentMonth))}</div><small>עוד ${sum.monthsLeft} חודשים</small></div>`);
+            stats.push(`<div class="card spent"><h3>נותר לשלם בסך הכול</h3><div class="value">${money(sum.remainingTotal)}</div>${sum.estimatedCount ? '<small>כולל הערכה</small>' : ''}</div>`);
+            document.getElementById('forecast-stats').innerHTML = stats.join('');
+
+            const cheer = document.getElementById('forecast-cheer');
+            cheer.hidden = false;
+            cheer.textContent = `בעוד ${sum.monthsLeft} חודשים לא יהיו יותר החזרי הלוואות 🎉`;
+
+            const startText = getForecastStart() === '1' ? 'בחודש הבא' : 'בחודש הנוכחי';
+            const notes = [`הצפי מניח תשלום אחד בכל חודש, והתשלום הבא ${startText}.`];
+            if (sum.estimatedCount) {
+                notes.push(`ההחזר של ${sum.estimatedLenders.join(', ')} חושב לפי הסכום שנלקח חלקי מספר התשלומים (בלי ריבית), כי לא הוזן תשלום חודשי.`);
+            }
+            document.getElementById('forecast-note').textContent = notes.join(' ');
+
+            document.getElementById('forecast-table').innerHTML = fc.steps.map(step => {
+                const range = step.from === step.to ? shortMonth(step.from) : `${shortMonth(step.from)} עד ${shortMonth(step.to)}`;
+                return `<tr><td>${esc(range)}</td><td>${money(step.amount)}</td></tr>`;
+            }).join('') + `<tr><td>מ-${esc(shortMonth(fc.months[fc.months.length - 1]))}</td><td>${money(0)}</td></tr>`;
+
+            if (!window.Chart) return;
+            forecastChart = new Chart(document.getElementById('loansForecastChart'), {
+                type: 'bar',
+                data: {
+                    labels: fc.months.map(shortMonth),
+                    datasets: forecastSeries(fc).map(s => ({
+                        label: s.label,
+                        data: s.data,
+                        backgroundColor: s.color,
+                        borderColor: '#ffffff',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                        borderSkipped: 'bottom',
+                        maxBarThickness: 24,
+                        stack: 'loans'
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { stacked: true, grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 8, maxRotation: 0 } },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            grid: { color: '#e8e8e6' },
+                            ticks: { callback: v => '₪' + (v >= 1000 ? (v / 1000) + 'K' : v) }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', rtl: true, labels: { usePointStyle: true, boxWidth: 8 } },
+                        tooltip: {
+                            rtl: true,
+                            textDirection: 'rtl',
+                            filter: item => item.parsed.y > 0,
+                            callbacks: {
+                                label: ctx => `${ctx.dataset.label}: ${money(ctx.parsed.y)}`,
+                                footer: items => (items.length > 1 ? 'סה"כ: ' + money(items.reduce((t, i) => t + i.parsed.y, 0)) : '')
+                            }
+                        }
+                    }
+                }
             });
         }
 
