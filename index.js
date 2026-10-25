@@ -18,6 +18,9 @@ const { validateLoan } = require('./loan-input');
 const { buildLoanForecast } = require('./loan-schedule');
 const { getLoans, addLoan, updateLoan, adjustLoanPayment, deleteLoan } = require('./db');
 const { createDailyBackup, listBackups } = require('./backup');
+const cardImport = require('./card-import');
+const { validateImportItems, validateMapping } = require('./import-input');
+const importDb = require('./db');
 
 function removeSingletonLocks(dir) {
     if (!fs.existsSync(dir)) return;
@@ -180,7 +183,7 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.use(express.json());
+app.use(express.json({ limit: '4mb' }));
 
 app.post('/api/quick-add', async (req, res) => {
     if (!QUICK_ADD_KEY) {
@@ -414,6 +417,71 @@ app.put("/api/expenses/:id", async (req, res) => {
         res.json({ success: true, ...input.value, id });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ---- ייבוא קובצי אשראי ----
+const uploadParser = express.raw({ type: 'application/octet-stream', limit: '8mb' });
+
+function importDescription(row) {
+    return row.installment ? `${row.merchant} (תשלום ${row.installment.n}/${row.installment.of})` : row.merchant;
+}
+
+app.post('/api/import/preview', uploadParser, async (req, res) => {
+    try {
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) return res.status(400).json({ error: 'לא התקבל קובץ' });
+        let fileName = '';
+        try { fileName = decodeURIComponent(req.get('x-filename') || '').slice(0, 200); } catch (e) { /* שם קובץ לא חיוני */ }
+        const sheets = cardImport.readTabularFile(req.body, fileName);
+        let parsed;
+        const manual = req.get('x-mapping');
+        if (manual) {
+            let mapping;
+            try { mapping = validateMapping(JSON.parse(manual)); } catch (e) { mapping = null; }
+            if (!mapping) return res.status(400).json({ error: 'מיפוי העמודות לא תקין' });
+            const headerRow = Math.max(0, parseInt(req.get('x-header-row') || '0', 10) || 0);
+            const first = sheets.find(s => s.rows.length) || { rows: [] };
+            await importDb.saveImportMapping(cardImport.headerSignature(first.rows[headerRow]), mapping);
+            parsed = cardImport.parseWithManualMapping(sheets, headerRow, mapping);
+        } else {
+            parsed = cardImport.parseCardFile(sheets, await importDb.getImportMappings());
+        }
+        if (!parsed.ok) return res.json(parsed);
+        if (parsed.rows.length === 0) return res.status(400).json({ error: 'לא נמצאו עסקאות בקובץ' });
+
+        const rows = cardImport.assignKeys(parsed.rows);
+        const known = await importDb.getExistingExternalIds(rows.map(r => r.key));
+        const learned = await importDb.getMerchantCategories();
+        const out = [];
+        for (const row of rows) {
+            const already = known.has(row.key);
+            const matches = already ? [] : await importDb.findManualMatches(row.date, row.amount);
+            const detected = learned[row.merchant] || autoDetectCategory(row.merchant, null);
+            out.push({
+                key: row.key, date: row.date, merchant: row.merchant, amount: row.amount,
+                originalAmount: row.originalAmount, installment: row.installment, fileCategory: row.fileCategory,
+                description: importDescription(row),
+                category: detected || 'אשראי',
+                categoryKnown: Boolean(detected),
+                status: already ? 'imported' : (matches.length ? 'maybe-duplicate' : 'new'),
+                matches: matches.map(m => ({ id: m.id, date: m.date, description: m.description, category: m.category }))
+            });
+        }
+        res.json({ ok: true, issuer: parsed.issuer, skipped: parsed.skipped, rows: out });
+    } catch (err) {
+        console.error('import preview failed:', err.message);
+        res.status(400).json({ error: err.message || 'לא הצלחתי לקרוא את הקובץ' });
+    }
+});
+
+app.post('/api/import/commit', async (req, res) => {
+    const { items, error } = validateImportItems(req.body);
+    if (error) return res.status(400).json({ error });
+    try {
+        res.json(await importDb.importCardExpenses(items));
+    } catch (err) {
+        console.error('import commit failed:', err.message);
+        res.status(500).json({ error: 'הייבוא נכשל, לא נשמר דבר' });
     }
 });
 
