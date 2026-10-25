@@ -83,6 +83,19 @@ db.serialize(() => {
         key TEXT PRIMARY KEY,
         value REAL
     )`);
+
+    // ---- ייבוא מכרטיסי אשראי ----
+    // העמודה נוספת למסדים קיימים; אם כבר קיימת השגיאה מתעלמת
+    db.run(`ALTER TABLE expenses ADD COLUMN external_id TEXT`, () => {});
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_external_id ON expenses(external_id) WHERE external_id IS NOT NULL`);
+    db.run(`CREATE TABLE IF NOT EXISTS merchant_categories (
+        merchant TEXT PRIMARY KEY,
+        category TEXT NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS import_mappings (
+        signature TEXT PRIMARY KEY,
+        mapping TEXT NOT NULL
+    )`);
 });
 
 function addExpense(sender, category, amount, description, raw_text = '', expenseDate = null) {
@@ -497,6 +510,12 @@ function deleteLoan(id) {
 }
 
 module.exports = {
+    getExistingExternalIds,
+    findManualMatches,
+    getMerchantCategories,
+    getImportMappings,
+    saveImportMapping,
+    importCardExpenses,
     getLoans,
     addLoan,
     updateLoan,
@@ -532,6 +551,76 @@ module.exports = {
     getTripSummary
 };
 
+// ---- ייבוא מכרטיסי אשראי ----
+function allP(sql, params = []) {
+    return new Promise((resolve, reject) => db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || []))));
+}
+function runP(sql, params = []) {
+    return new Promise((resolve, reject) => db.run(sql, params, function(err) { return err ? reject(err) : resolve(this.changes); }));
+}
+
+// אילו מפתחות עסקה כבר יובאו בעבר
+async function getExistingExternalIds(keys) {
+    const found = new Set();
+    for (let i = 0; i < keys.length; i += 500) {
+        const chunk = keys.slice(i, i + 500);
+        const rows = await allP(`SELECT external_id FROM expenses WHERE external_id IN (${chunk.map(() => '?').join(',')})`, chunk);
+        rows.forEach(r => found.add(r.external_id));
+    }
+    return found;
+}
+
+// הוצאות שהוקלדו ידנית (ווטסאפ/טופס, בלי external_id) עם אותו סכום בטווח של ימים סביב התאריך
+async function findManualMatches(date, amount, days = 3) {
+    return allP(
+        `SELECT id, date, category, amount, description FROM expenses
+         WHERE external_id IS NULL AND ABS(amount - ?) < 0.005
+           AND date BETWEEN date(?, ?) AND date(?, ?) ORDER BY date, id`,
+        [amount, date, `-${days} days`, date, `+${days} days`]
+    );
+}
+
+async function getMerchantCategories() {
+    const map = {};
+    (await allP(`SELECT merchant, category FROM merchant_categories`)).forEach(r => { map[r.merchant] = r.category; });
+    return map;
+}
+
+async function getImportMappings() {
+    const map = {};
+    (await allP(`SELECT signature, mapping FROM import_mappings`)).forEach(r => {
+        try { map[r.signature] = JSON.parse(r.mapping); } catch (e) { /* מיפוי פגום מתעלמים */ }
+    });
+    return map;
+}
+
+function saveImportMapping(signature, mapping) {
+    return runP(`INSERT OR REPLACE INTO import_mappings (signature, mapping) VALUES (?, ?)`, [signature, JSON.stringify(mapping)]);
+}
+
+// items: [{key, date, amount, category, description, merchant, raw}]; כל הייבוא בטרנזקציה אחת
+async function importCardExpenses(items, sender = 'ייבוא אשראי') {
+    let inserted = 0;
+    let duplicates = 0;
+    await runP('BEGIN');
+    try {
+        for (const it of items) {
+            const changes = await runP(
+                `INSERT OR IGNORE INTO expenses (date, sender, category, amount, description, raw_text, external_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [it.date, sender, it.category, it.amount, it.description, it.raw || '', it.key]
+            );
+            if (changes) inserted += 1; else duplicates += 1;
+            if (it.merchant && it.learn) {
+                await runP(`INSERT OR REPLACE INTO merchant_categories (merchant, category) VALUES (?, ?)`, [it.merchant, it.category]);
+            }
+        }
+        await runP('COMMIT');
+    } catch (e) {
+        await runP('ROLLBACK').catch(() => {});
+        throw e;
+    }
+    return { inserted, duplicates };
+}
 
 function deleteBudget(id) {
     return new Promise((resolve, reject) => {

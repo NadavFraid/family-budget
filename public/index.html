@@ -30,6 +30,18 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+
+        .import-drop { border: 2px dashed #3498db; border-radius: 12px; padding: 28px 16px; text-align: center; background: #f5faff; cursor: pointer; color: #2c3e50; }
+        .import-drop.over { background: #dbeeff; }
+        .import-note { font-size: 13px; color: #666; margin: 8px 0; }
+        .import-summary { margin: 12px 0; font-weight: bold; }
+        .import-error { background: #fdecea; color: #c0392b; padding: 10px; border-radius: 8px; margin: 10px 0; }
+        .import-ok { background: #e8f8ef; color: #1e8449; padding: 10px; border-radius: 8px; margin: 10px 0; }
+        #import-table-wrap { overflow-x: auto; }
+        #import-table input[type=text] { width: 120px; padding: 4px; }
+        #import-table tr.st-imported { color: #999; background: #f4f4f4; }
+        #import-table tr.st-maybe { background: #fff8e1; }
+        .import-warn { display: block; font-size: 12px; color: #b9770e; }
         .card { flex: 1; min-width: 200px; background: #f8f9fa; padding: 15px; border-radius: 8px; border-right: 5px solid #3498db; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .card.spent { border-right-color: #e74c3c; }
         .card.remaining { border-right-color: #27ae60; }
@@ -203,6 +215,7 @@
             <button class="tab-btn" onclick="switchTab('budgets')">ניהול תקציב חודשי</button>
             <button class="tab-btn" onclick="switchTab('monthly')">📅 סיכום חודשי</button>
             <button class="tab-btn" onclick="switchTab('loans')">🏦 הלוואות</button>
+            <button class="tab-btn" onclick="switchTab('import')">📥 ייבוא אשראי</button>
             <button class="tab-btn trip-btn" onclick="switchTab('trip')">✈️ תקציב טיול</button>
         </div>
 
@@ -404,6 +417,28 @@
             <div id="loans-list"><p style="text-align:center;color:#7f8c8d;">טוען...</p></div>
         </div>
 
+        <div id="import-tab" class="tab-content">
+            <div id="import-drop" class="import-drop" tabindex="0" role="button">
+                <div style="font-size:34px">📥</div>
+                <div><b>גררו לכאן את קבצי האשראי</b> או לחצו לבחירה</div>
+                <div class="import-note">קובצי Excel (xlsx) או CSV שהורדתם מאתר ישראכרט/אמקס או כאל. אפשר כמה קבצים יחד.</div>
+            </div>
+            <input type="file" id="import-file" accept=".xlsx,.csv,.xls,.txt" multiple hidden>
+            <div id="import-msg"></div>
+            <div id="import-mapping" hidden></div>
+            <div id="import-result" hidden>
+                <div class="import-summary" id="import-summary"></div>
+                <div class="import-note">עסקאות שכבר יובאו מסומנות באפור ולא ייובאו שוב. עסקאות שנראות כמו הוצאה שהוקלדה בווטסאפ (אותו סכום בטווח 3 ימים) מסומנות בצהוב ולא מסומנות לייבוא, כדי לא לספור פעמיים.</div>
+                <div id="import-table-wrap">
+                    <table id="import-table">
+                        <thead><tr><th><input type="checkbox" id="import-all" title="בחר הכל"></th><th>תאריך</th><th>בית עסק</th><th>סכום</th><th>קטגוריה</th></tr></thead>
+                        <tbody id="import-body"></tbody>
+                    </table>
+                </div>
+                <button id="import-commit" class="btn" style="margin-top:12px">ייבא את המסומנות</button>
+            </div>
+        </div>
+
         <div id="trip-tab" class="tab-content">
             <div class="summary-cards">
                 <div class="card trip">
@@ -563,6 +598,154 @@
             showAll.hidden = !selectedCategory;
         }
 
+
+        // ---- ייבוא קובצי אשראי ----
+        let importRows = [];
+        let importPending = null; // קובץ שממתין למיפוי ידני
+
+        function importMessage(text, kind) {
+            const box = document.getElementById('import-msg');
+            box.innerHTML = text ? `<div class="${kind === 'ok' ? 'import-ok' : 'import-error'}">${esc(text)}</div>` : '';
+        }
+
+        async function importUpload(file, mappingInfo) {
+            const headers = { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) };
+            if (mappingInfo) { headers['X-Mapping'] = JSON.stringify(mappingInfo.mapping); headers['X-Header-Row'] = String(mappingInfo.headerRow); }
+            const res = await fetch('/api/import/preview', { method: 'POST', headers, body: file });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'לא הצלחתי לקרוא את הקובץ');
+            return data;
+        }
+
+        async function handleImportFiles(files) {
+            importMessage('');
+            document.getElementById('import-mapping').hidden = true;
+            document.getElementById('import-result').hidden = true;
+            const list = Array.from(files || []);
+            if (!list.length) return;
+            const byKey = new Map();
+            for (const file of list) {
+                try {
+                    const data = await importUpload(file);
+                    if (data.needsMapping) { showImportMapping(file, data); return; }
+                    data.rows.forEach(r => { if (!byKey.has(r.key)) byKey.set(r.key, r); });
+                } catch (e) {
+                    importMessage(`${file.name}: ${e.message}`, 'error');
+                    return;
+                }
+            }
+            showImportPreview(Array.from(byKey.values()));
+        }
+
+        function showImportMapping(file, data) {
+            importPending = { file, headerRow: data.headerRowIndex };
+            const box = document.getElementById('import-mapping');
+            const cols = Math.max(...data.sample.map(r => r.length), 1);
+            const options = ['<option value="">— לא קיים —</option>'].concat(Array.from({ length: cols }, (_, i) => `<option value="${i}">עמודה ${i + 1}: ${esc((data.sample[data.headerRowIndex] || [])[i] || '')}</option>`)).join('');
+            const field = (id, label) => `<label>${label} <select id="map-${id}">${options}</select></label>`;
+            box.innerHTML = `<div class="import-error">לא זיהיתי את העמודות בקובץ הזה. סמנו איפה כל עמודה נמצאת ואזכור את זה לפעם הבאה.</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">${field('date', 'תאריך')}${field('merchant', 'בית עסק')}${field('amount', 'סכום')}</div>
+                <button class="btn" id="map-go" style="margin-top:10px">המשך</button>
+                <div class="import-note">תצוגה של תחילת הקובץ:</div>
+                <div style="overflow-x:auto"><table>${data.sample.slice(0, 8).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`;
+            box.hidden = false;
+            document.getElementById('map-go').onclick = async () => {
+                const mapping = {};
+                ['date', 'merchant', 'amount'].forEach(f => { const v = document.getElementById('map-' + f).value; if (v !== '') mapping[f] = Number(v); });
+                if (mapping.date === undefined || mapping.merchant === undefined || mapping.amount === undefined) { importMessage('צריך לבחור עמודה לתאריך, לבית העסק ולסכום', 'error'); return; }
+                try {
+                    const result = await importUpload(importPending.file, { mapping, headerRow: importPending.headerRow });
+                    box.hidden = true;
+                    importMessage('');
+                    showImportPreview(result.rows);
+                } catch (e) { importMessage(e.message, 'error'); }
+            };
+        }
+
+        function showImportPreview(rows) {
+            importRows = rows.map(r => ({ ...r, initialCategory: r.category, selected: r.status === 'new' }));
+            importRows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+            document.getElementById('import-result').hidden = false;
+            renderImportTable();
+        }
+
+        function renderImportTable() {
+            const body = document.getElementById('import-body');
+            body.innerHTML = importRows.map((r, i) => {
+                const cls = r.status === 'imported' ? 'st-imported' : r.status === 'maybe-duplicate' ? 'st-maybe' : '';
+                const notes = [];
+                if (r.status === 'imported') notes.push('כבר יובאה');
+                if (r.status === 'maybe-duplicate') notes.push(`אולי כבר הוקלדה: ${r.matches.map(m => esc(m.description || m.category || '')).join(', ')}`);
+                if (r.installment) notes.push(`תשלום ${r.installment.n} מתוך ${r.installment.of}` + (r.originalAmount ? ` (סכום עסקה ${money(r.originalAmount)})` : ''));
+                if (r.amount < 0) notes.push('זיכוי');
+                return `<tr class="${cls}">
+                    <td><input type="checkbox" data-i="${i}" class="imp-sel" ${r.selected ? 'checked' : ''} ${r.status === 'imported' ? 'disabled' : ''}></td>
+                    <td>${esc(formatDisplayDate(r.date))}</td>
+                    <td>${esc(r.merchant)}${notes.map(n => `<span class="import-warn">${n}</span>`).join('')}</td>
+                    <td>${money(r.amount)}</td>
+                    <td><input type="text" list="category-options" data-i="${i}" class="imp-cat" value="${esc(r.category)}" maxlength="50"></td>
+                </tr>`;
+            }).join('');
+            updateImportSummary();
+        }
+
+        function updateImportSummary() {
+            const chosen = importRows.filter(r => r.selected);
+            const total = chosen.reduce((sum, r) => sum + r.amount, 0);
+            const count = s => importRows.filter(r => r.status === s).length;
+            document.getElementById('import-summary').textContent =
+                `${importRows.length} עסקאות בקובץ · ${count('imported')} כבר יובאו · ${count('maybe-duplicate')} חשודות ככפולות · נבחרו ${chosen.length} בסך ${money(total)}`;
+            document.getElementById('import-commit').disabled = chosen.length === 0;
+        }
+
+        async function commitImport() {
+            const chosen = importRows.filter(r => r.selected && r.category.trim());
+            const missing = importRows.filter(r => r.selected && !r.category.trim());
+            if (missing.length) { importMessage('לחלק מהעסקאות שנבחרו אין קטגוריה', 'error'); return; }
+            const button = document.getElementById('import-commit');
+            button.disabled = true;
+            try {
+                const res = await fetch('/api/import/commit', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: chosen.map(r => ({ key: r.key, date: r.date, amount: r.amount, category: r.category.trim(), description: r.description, merchant: r.merchant, learn: r.category.trim() !== r.initialCategory })) })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'הייבוא נכשל');
+                importMessage(`יובאו ${data.inserted} הוצאות` + (data.duplicates ? ` (${data.duplicates} כבר היו קיימות)` : ''), 'ok');
+                importRows = [];
+                document.getElementById('import-result').hidden = true;
+                refreshCategoryOptions();
+            } catch (e) {
+                importMessage(e.message, 'error');
+                button.disabled = false;
+            }
+        }
+
+        (function initImport() {
+            const drop = document.getElementById('import-drop');
+            const input = document.getElementById('import-file');
+            drop.addEventListener('click', () => input.click());
+            drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+            input.addEventListener('change', () => { handleImportFiles(input.files); input.value = ''; });
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+            drop.addEventListener('drop', e => handleImportFiles(e.dataTransfer.files));
+            document.getElementById('import-commit').addEventListener('click', commitImport);
+            document.getElementById('import-all').addEventListener('change', e => {
+                importRows.forEach(r => { if (r.status !== 'imported') r.selected = e.target.checked; });
+                renderImportTable();
+            });
+            document.getElementById('import-body').addEventListener('change', e => {
+                const i = Number(e.target.dataset.i);
+                if (e.target.classList.contains('imp-sel')) importRows[i].selected = e.target.checked;
+                if (e.target.classList.contains('imp-cat')) importRows[i].category = e.target.value;
+                updateImportSummary();
+            });
+            document.getElementById('import-body').addEventListener('input', e => {
+                if (e.target.classList.contains('imp-cat')) importRows[Number(e.target.dataset.i)].category = e.target.value;
+            });
+        })();
+
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -587,6 +770,10 @@
                 document.querySelector('button[onclick="switchTab(\'loans\')"]').classList.add('active');
                 document.getElementById('loans-tab').classList.add('active');
                 loadLoans();
+            } else if (tabName === 'import') {
+                document.querySelector('button[onclick="switchTab(\'import\')"]').classList.add('active');
+                document.getElementById('import-tab').classList.add('active');
+                refreshCategoryOptions();
             } else if (tabName === 'trip') {
                 document.querySelector('.tab-btn.trip-btn').classList.add('active');
                 document.getElementById('trip-tab').classList.add('active');
