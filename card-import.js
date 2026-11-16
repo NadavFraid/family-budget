@@ -144,8 +144,14 @@ function readSheetRows(xml, shared, isDateStyle) {
     return rows;
 }
 
+// חלק מהאתרים מייצאים xlsx עם קידומת למרחב השמות (<x:row>, <x:c>); מסירים אותה כדי לקרוא כרגיל
+function stripNamespaces(xml) {
+    return xml ? xml.replace(/^\uFEFF/, '').replace(/<(\/?)[A-Za-z_][\w.-]*:(?=[A-Za-z])/g, '<$1') : xml;
+}
+
 function readXlsx(buffer) {
-    const zip = openZip(buffer);
+    const rawZip = openZip(buffer);
+    const zip = { has: n => rawZip.has(n), read: n => stripNamespaces(rawZip.read(n)) };
     if (!zip.has('xl/workbook.xml')) throw new Error('הקובץ אינו קובץ Excel תקין (xlsx)');
     const shared = readSharedStrings(zip.read('xl/sharedStrings.xml'));
     const isDateStyle = readStyles(zip.read('xl/styles.xml'));
@@ -329,6 +335,16 @@ function parseInstallment(...texts) {
     return null;
 }
 
+const SECTION_MARKER = norm('עסקאות למועד חיוב');
+
+function isSectionMarker(row) {
+    return Array.isArray(row) && row.some(c => typeof c === 'string' && norm(c).startsWith(SECTION_MARKER));
+}
+
+function isTotalRow(row) {
+    return Array.isArray(row) && row.some(c => typeof c === 'string' && norm(c).startsWith('סהכ'));
+}
+
 function parseDataRow(row, mapping) {
     const cell = field => (mapping[field] === undefined ? undefined : row[mapping[field]]);
     const date = parseDateCell(cell('date'));
@@ -376,7 +392,12 @@ function parseCardFile(sheets, savedMappings = {}) {
 
     for (const sheet of sheets) {
         let mapping = null;
-        for (const row of sheet.rows) {
+        // אם בגיליון יש שורת "עסקאות למועד חיוב", קוראים רק את הטבלה שאחריה (עד שורת הסיכום);
+        // כך מדלגים על שורות הפתיחה ועל "עסקאות שטרם נקלטו" שעוד לא חויבו
+        const markerAt = sheet.rows.findIndex(isSectionMarker);
+        const rowsToRead = markerAt >= 0 ? sheet.rows.slice(markerAt + 1) : sheet.rows;
+        for (const row of rowsToRead) {
+            if (markerAt >= 0 && mapping && isTotalRow(row)) break;
             const header = detectHeader(row);
             if (header) {
                 mapping = header; sawHeader = true; issuer = issuer || guessIssuer(header);

@@ -11,7 +11,7 @@ function crc32(buf) {
 }
 
 // בונה xlsx מינימלי בזיכרון (zip עם דחיסה) כדי לבדוק את הקורא בלי תלויות
-function buildXlsx(rows, dateCols = []) {
+function buildXlsx(rows, dateCols = [], prefix = '') {
     const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const sheetRows = rows.map((r, i) => `<row r="${i + 1}">` + r.map((v, j) => {
         const ref = String.fromCharCode(65 + j) + (i + 1);
@@ -27,7 +27,8 @@ function buildXlsx(rows, dateCols = []) {
     };
     const parts = []; const central = []; let offset = 0;
     for (const [name, text] of Object.entries(files)) {
-        const data = Buffer.from(text); const comp = zlib.deflateRawSync(data); const nm = Buffer.from(name);
+        const xml = prefix ? text.replace(/<(\/?)(?=[A-Za-z])/g, `<$1${prefix}:`) : text;
+        const data = Buffer.from(xml); const comp = zlib.deflateRawSync(data); const nm = Buffer.from(name);
         const h = Buffer.alloc(30); h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(8, 8); h.writeUInt32LE(crc32(data), 14);
         h.writeUInt32LE(comp.length, 18); h.writeUInt32LE(data.length, 22); h.writeUInt16LE(nm.length, 26);
         parts.push(h, nm, comp);
@@ -92,4 +93,29 @@ test('parseAmountCell ו-parseDateCell', () => {
 test('קובץ xls ישן וקובץ ריק נדחים', () => {
     assert.throws(() => ci.readTabularFile(Buffer.alloc(0)));
     assert.throws(() => ci.readTabularFile(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0])), /xls/);
+});
+
+test('מתחיל אחרי "עסקאות למועד חיוב", מדלג על "שטרם נקלטו" ועוצר בשורת הסיכום (גם עם קידומת x: ב-xml)', () => {
+    const head = ['תאריך רכישה', 'שם בית עסק', 'סכום עסקה', 'מטבע עסקה', 'סכום חיוב', 'מטבע חיוב', "מס' שובר", 'פירוט נוסף'];
+    const rows = [
+        ['פירוט עסקאות', null, 'דצמבר 2026'],
+        ['עסקאות שטרם נקלטו'],
+        ['תאריך רכישה', 'שם בית עסק', 'סכום עסקה', 'מטבע עסקה'],
+        ['15.11.26', 'עוד לא חויב', 280.23, '₪'],
+        [null, 'סה"כ עסקאות שטרם נקלטו', 280.23, '₪'],
+        ['עסקאות למועד חיוב'],
+        head,
+        ['13.11.26', 'סניף יג', 32.8, '₪', 32.8, '₪', '501', ''],
+        ['11.11.26', 'אתר חו"ל', 53.79, '£', 229.89, '₪', '502', 'אתר חו"ל'],
+        ['06.10.26', 'ביטוח', 634, '₪', 126.6, '₪', '503', 'תשלום 2 מתוך 5'],
+        [null, 'סה"כ לחיוב החודש בכרטיס בש"ח', null, null, 389.29, '₪'],
+        ['אחרי הסיכום', 'שורה שלא צריכה להיקרא', 5, '₪', 5, '₪']
+    ];
+    for (const prefix of ['', 'x']) {
+        const r = ci.parseCardFile(ci.readTabularFile(buildXlsx(rows, [], prefix), 'a.xlsx'));
+        assert.equal(r.ok, true);
+        assert.deepEqual(r.rows.map(x => x.amount), [32.8, 229.89, 126.6]);
+        assert.equal(r.rows[1].originalAmount, 53.79);
+        assert.deepEqual(r.rows[2].installment, { n: 2, of: 5 });
+    }
 });
