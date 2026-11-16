@@ -458,7 +458,7 @@ app.post('/api/import/preview', uploadParser, async (req, res) => {
             const matches = already ? [] : await importDb.findManualMatches(row.date, row.amount);
             const detected = learned[row.merchant] || autoDetectCategory(row.merchant, null);
             out.push({
-                key: row.key, date: row.date, merchant: row.merchant, amount: row.amount,
+                key: row.key, date: parsed.chargeDate || row.date, purchaseDate: row.date, merchant: row.merchant, amount: row.amount,
                 originalAmount: row.originalAmount, installment: row.installment, fileCategory: row.fileCategory,
                 description: importDescription(row),
                 category: detected || 'אשראי',
@@ -467,7 +467,7 @@ app.post('/api/import/preview', uploadParser, async (req, res) => {
                 matches: matches.map(m => ({ id: m.id, date: m.date, description: m.description, category: m.category }))
             });
         }
-        res.json({ ok: true, issuer: parsed.issuer, skipped: parsed.skipped, rows: out });
+        res.json({ ok: true, issuer: parsed.issuer, chargeDate: parsed.chargeDate || null, skipped: parsed.skipped, rows: out });
     } catch (err) {
         console.error('import preview failed:', err.message);
         res.status(400).json({ error: err.message || 'לא הצלחתי לקרוא את הקובץ' });

@@ -429,6 +429,11 @@
             <div id="import-result" hidden>
                 <div class="import-summary" id="import-summary"></div>
                 <div class="import-note">עסקאות שכבר יובאו מסומנות באפור ולא ייובאו שוב. עסקאות שנראות כמו הוצאה שהוקלדה בווטסאפ (אותו סכום בטווח 3 ימים) מסומנות בצהוב ולא מסומנות לייבוא, כדי לא לספור פעמיים.</div>
+                <div class="import-note" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <label for="import-charge-date"><b>תאריך חיוב:</b></label>
+                    <input type="date" id="import-charge-date">
+                    <span id="import-charge-note"></span>
+                </div>
                 <div id="import-table-wrap">
                     <table id="import-table">
                         <thead><tr><th><input type="checkbox" id="import-all" title="בחר הכל"></th><th>תאריך</th><th>בית עסק</th><th>סכום</th><th>קטגוריה</th></tr></thead>
@@ -663,7 +668,14 @@
         }
 
         function showImportPreview(rows) {
-            importRows = rows.map(r => ({ ...r, initialCategory: r.category, selected: r.status === 'new' }));
+            importRows = rows.map(r => ({ ...r, purchaseDate: r.purchaseDate || r.date, initialCategory: r.category, selected: r.status === 'new' }));
+            const dates = new Set(importRows.map(r => r.date));
+            const chargeInput = document.getElementById('import-charge-date');
+            chargeInput.value = dates.size === 1 ? importRows[0].date : '';
+            const differs = importRows.some(r => r.date !== r.purchaseDate);
+            document.getElementById('import-charge-note').textContent = dates.size === 1
+                ? (differs ? 'כל העסקאות יירשמו בתאריך החיוב (תאריך הרכישה נשמר בהערות). אפשר לשנות.' : 'לא זוהה תאריך חיוב בקובץ; אפשר לבחור כדי לרשום את כל העסקאות בו.')
+                : 'בקבצים שונים תאריכי חיוב שונים. בחירת תאריך כאן תחול על כולם.';
             importRows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
             document.getElementById('import-result').hidden = false;
             renderImportTable();
@@ -680,7 +692,7 @@
                 if (r.amount < 0) notes.push('זיכוי');
                 return `<tr class="${cls}">
                     <td><input type="checkbox" data-i="${i}" class="imp-sel" ${r.selected ? 'checked' : ''} ${r.status === 'imported' ? 'disabled' : ''}></td>
-                    <td>${esc(formatDisplayDate(r.date))}</td>
+                    <td>${esc(formatDisplayDate(r.date))}${r.purchaseDate !== r.date ? `<span class="import-warn">נקנה ב-${esc(formatDisplayDate(r.purchaseDate))}</span>` : ''}</td>
                     <td>${esc(r.merchant)}${notes.map(n => `<span class="import-warn">${n}</span>`).join('')}</td>
                     <td>${money(r.amount)}</td>
                     <td><input type="text" list="category-options" data-i="${i}" class="imp-cat" value="${esc(r.category)}" maxlength="50"></td>
@@ -707,7 +719,7 @@
             try {
                 const res = await fetch('/api/import/commit', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: chosen.map(r => ({ key: r.key, date: r.date, amount: r.amount, category: r.category.trim(), description: r.description, merchant: r.merchant, learn: r.category.trim() !== r.initialCategory })) })
+                    body: JSON.stringify({ items: chosen.map(r => ({ key: r.key, date: r.date, purchaseDate: r.purchaseDate, amount: r.amount, category: r.category.trim(), description: r.description, merchant: r.merchant, learn: r.category.trim() !== r.initialCategory })) })
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || 'הייבוא נכשל');
@@ -731,6 +743,10 @@
             ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
             drop.addEventListener('drop', e => handleImportFiles(e.dataTransfer.files));
             document.getElementById('import-commit').addEventListener('click', commitImport);
+            document.getElementById('import-charge-date').addEventListener('change', e => {
+                importRows.forEach(r => { r.date = e.target.value || r.purchaseDate; });
+                renderImportTable();
+            });
             document.getElementById('import-all').addEventListener('change', e => {
                 importRows.forEach(r => { if (r.status !== 'imported') r.selected = e.target.checked; });
                 renderImportTable();

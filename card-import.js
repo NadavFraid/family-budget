@@ -144,8 +144,14 @@ function readSheetRows(xml, shared, isDateStyle) {
     return rows;
 }
 
+// חלק מהאתרים מייצאים xlsx עם קידומת למרחב השמות (<x:row>, <x:c>); מסירים אותה כדי לקרוא כרגיל
+function stripNamespaces(xml) {
+    return xml ? xml.replace(/^\uFEFF/, '').replace(/<(\/?)[A-Za-z_][\w.-]*:(?=[A-Za-z])/g, '<$1') : xml;
+}
+
 function readXlsx(buffer) {
-    const zip = openZip(buffer);
+    const rawZip = openZip(buffer);
+    const zip = { has: n => rawZip.has(n), read: n => stripNamespaces(rawZip.read(n)) };
     if (!zip.has('xl/workbook.xml')) throw new Error('הקובץ אינו קובץ Excel תקין (xlsx)');
     const shared = readSharedStrings(zip.read('xl/sharedStrings.xml'));
     const isDateStyle = readStyles(zip.read('xl/styles.xml'));
@@ -329,6 +335,39 @@ function parseInstallment(...texts) {
     return null;
 }
 
+const SECTION_MARKER = norm('עסקאות למועד חיוב');
+
+function isSectionMarker(row) {
+    return Array.isArray(row) && row.some(c => typeof c === 'string' && norm(c).startsWith(SECTION_MARKER));
+}
+
+function isTotalRow(row) {
+    return Array.isArray(row) && row.some(c => typeof c === 'string' && norm(c).startsWith('סהכ'));
+}
+
+// תאריך החיוב מופיע בכותרת הקובץ, למשל "לחיוב ב-02.12" (בלי שנה). את השנה משלימים כך שהחיוב
+// יהיה אחרי העסקה האחרונה בקובץ.
+function detectChargeDate(sheets, rows) {
+    for (const sheet of sheets) {
+        for (const row of sheet.rows) {
+            for (const cell of row) {
+                if (typeof cell !== 'string') continue;
+                const m = /לחיוב\s*ב[-\s]*(\d{1,2})[./](\d{1,2})(?:[./](\d{2}|\d{4}))?(?!\d)/.exec(cell);
+                if (!m) continue;
+                const day = m[1].padStart(2, '0');
+                const month = m[2].padStart(2, '0');
+                if (m[3]) return parseDateCell(`${day}/${month}/${m[3]}`);
+                const latest = rows.reduce((max, r) => (r.date > max ? r.date : max), '0000-00-00');
+                let year = Number(latest.slice(0, 4)) || new Date().getFullYear();
+                let iso = `${year}-${month}-${day}`;
+                if (iso < latest) { year += 1; iso = `${year}-${month}-${day}`; }
+                return isValidDateStr(iso) ? iso : null;
+            }
+        }
+    }
+    return null;
+}
+
 function parseDataRow(row, mapping) {
     const cell = field => (mapping[field] === undefined ? undefined : row[mapping[field]]);
     const date = parseDateCell(cell('date'));
@@ -376,7 +415,12 @@ function parseCardFile(sheets, savedMappings = {}) {
 
     for (const sheet of sheets) {
         let mapping = null;
-        for (const row of sheet.rows) {
+        // אם בגיליון יש שורת "עסקאות למועד חיוב", קוראים רק את הטבלה שאחריה (עד שורת הסיכום);
+        // כך מדלגים על שורות הפתיחה ועל "עסקאות שטרם נקלטו" שעוד לא חויבו
+        const markerAt = sheet.rows.findIndex(isSectionMarker);
+        const rowsToRead = markerAt >= 0 ? sheet.rows.slice(markerAt + 1) : sheet.rows;
+        for (const row of rowsToRead) {
+            if (markerAt >= 0 && mapping && isTotalRow(row)) break;
             const header = detectHeader(row);
             if (header) {
                 mapping = header; sawHeader = true; issuer = issuer || guessIssuer(header);
@@ -402,7 +446,7 @@ function parseCardFile(sheets, savedMappings = {}) {
             sample: first.rows.slice(0, 25).map(r => r.map(c => (c === null || c === undefined ? '' : String(c))))
         };
     }
-    return { ok: true, issuer: issuer || 'כרטיס אשראי', rows, skipped };
+    return { ok: true, issuer: issuer || 'כרטיס אשראי', rows, skipped, chargeDate: detectChargeDate(sheets, rows) };
 }
 
 // מיפוי ידני שהמשתמש בחר: { date, merchant, amount, charge?, ... } -> אינדקסי עמודות
