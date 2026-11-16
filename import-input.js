@@ -25,7 +25,9 @@ function validateImportItems(body) {
         if (!category || category.length > 50) return { error: `${label}: קטגוריה חסרה או ארוכה מדי` };
         const description = typeof it.description === 'string' ? it.description.trim().slice(0, 200) : '';
         const merchant = typeof it.merchant === 'string' ? it.merchant.trim().slice(0, 200) : '';
+        const purchase = typeof it.purchaseDate === 'string' && isValidDateStr(it.purchaseDate) && it.purchaseDate !== it.date ? it.purchaseDate : null;
         clean.push({
+            raw: purchase ? `תאריך רכישה: ${purchase}` : '',
             key: it.key, date: it.date, amount: Math.round(amount * 100) / 100, category, description,
             merchant, learn: Boolean(it.learn) && merchant !== ''
         });

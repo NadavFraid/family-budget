@@ -119,3 +119,11 @@ test('מתחיל אחרי "עסקאות למועד חיוב", מדלג על "ש�
         assert.deepEqual(r.rows[2].installment, { n: 2, of: 5 });
     }
 });
+
+test('זיהוי תאריך חיוב מ"לחיוב ב-02.12" והשלמת השנה אחרי העסקה האחרונה', () => {
+    const head = ['תאריך רכישה', 'שם בית עסק', 'סכום עסקה', 'מטבע עסקה', 'סכום חיוב', 'מטבע חיוב', "מס' שובר", 'פירוט נוסף'];
+    const mk = (d, date) => ci.parseCardFile([{ name: 'x', rows: [['על שם', null, null, null, null, null, null, d], ['עסקאות למועד חיוב'], head, [date, 'חנות', 10, '₪', 10, '₪', '1', '']] }]);
+    assert.equal(mk('לחיוב ב-02.12', '13.11.26').chargeDate, '2026-12-02');
+    assert.equal(mk('לחיוב ב-02.01', '28.12.26').chargeDate, '2027-01-02');
+    assert.equal(mk('אין', '13.11.26').chargeDate, null);
+});
